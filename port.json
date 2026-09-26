@@ -1,0 +1,20 @@
+{
+  "version": 4,
+  "name": "qix.zip",
+  "items": [
+    "Qix.sh",
+    "qix"
+  ],
+  "items_opt": [],
+  "attr": {
+    "title": "Qix (1981 Arcade)",
+    "porter": ["Antigravity"],
+    "desc": "Classic 1981 Taito arcade territory-claiming action ported natively to Love2D for the R36S 640x480 screen with physical Gamepad controls.",
+    "inst": "Copy Qix.sh and the qix/ directory to your SD card's ports/ folder.",
+    "genres": ["Action", "Arcade"],
+    "rtr": false,
+    "runtime": "love-11.4",
+    "reqs": [],
+    "arch": ["aarch64", "armhf"]
+  }
+}

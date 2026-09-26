@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <game>
+    <path>./Qix.sh</path>
+    <name>Qix (1981 Arcade)</name>
+    <desc>Draw lines across the playfield to claim territory and reveal hidden arcade artwork while evading the chaotic vector Qix and patrolling Sparx enemies. Optimized for 640x480 resolution on R36S handheld console.</desc>
+    <image>./qix/cover.png</image>
+    <thumbnail>./qix/screenshot.png</thumbnail>
+    <rating>0.9</rating>
+    <releasedate>19811001T000000</releasedate>
+    <developer>Taito</developer>
+    <publisher>Taito</publisher>
+    <genre>Action / Puzzle</genre>
+    <players>1</players>
+  </game>
+</gameList>

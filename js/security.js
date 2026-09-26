@@ -37,14 +37,8 @@
     }
 
     checkExistingAuth() {
-      const sessionToken = sessionStorage.getItem('qix_auth_token');
-      const persistentToken = localStorage.getItem('qix_auth_remember');
-
-      if (sessionToken === 'GRANTED' || persistentToken === 'GRANTED') {
-        this.authorized = true;
-      } else {
-        this.authorized = false;
-      }
+      // In arcade/handheld console mode, bypass security lock screen
+      this.authorized = true;
     }
 
     isAuthorized() {

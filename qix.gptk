@@ -1,0 +1,25 @@
+back = esc
+start = enter
+
+a = space
+b = shift
+x = c
+y = v
+
+l1 = p
+l2 = mouse_left
+r1 = m
+r2 = mouse_right
+
+up = up
+down = down
+left = left
+right = right
+
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right
+
+deadzone_mode = axial
+deadzone = 2000

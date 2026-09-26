@@ -2071,8 +2071,8 @@ class QixGame {
       return b ? (typeof b === 'object' ? b.pressed : b > 0.5) : false;
     };
 
-    // Hardware Audio Unlock on first physical button press
-    if (window.soundEngine && !window.soundEngine.audioUnlocked) {
+    // Hardware Audio & Fullscreen Unlock on first physical button press
+    if (!this.hardwareUnlocked) {
       let anyBtn = false;
       if (gp.buttons) {
         for (let i = 0; i < gp.buttons.length; i++) {
@@ -2083,7 +2083,13 @@ class QixGame {
         }
       }
       if (anyBtn) {
-        window.soundEngine.unlockAudio();
+        this.hardwareUnlocked = true;
+        if (window.soundEngine) {
+          window.soundEngine.unlockAudio();
+        }
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
       }
     }
 
