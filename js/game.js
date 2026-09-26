@@ -117,11 +117,20 @@ function triggerHaptic(pattern) {
 class QixGame {
   constructor() {
     this.canvas = document.getElementById('game-canvas');
+    this.canvas.width = 640;
+    this.canvas.height = 480;
     this.ctx = this.canvas.getContext('2d');
 
-    // High-DPI & scale configuration
-    this.scaleX = this.canvas.width / GAME_WIDTH;
-    this.scaleY = this.canvas.height / GAME_HEIGHT;
+    // Discrete playfield grid
+    this.grid = new GameGrid(GAME_WIDTH, GAME_HEIGHT);
+
+    // Calculate grid scale and centering to maximize 640x480 space while preserving original aspect ratio
+    const scale = Math.min(this.canvas.width / this.grid.width, this.canvas.height / this.grid.height);
+    this.scale = scale;
+    this.scaleX = scale;
+    this.scaleY = scale;
+    this.offsetX = Math.floor((this.canvas.width - this.grid.width * scale) / 2);
+    this.offsetY = Math.floor((this.canvas.height - this.grid.height * scale) / 2);
 
     // Offscreen canvas for fast cached background rendering
     this.bgCanvas = document.createElement('canvas');
@@ -154,7 +163,6 @@ class QixGame {
     this.fullyRevealed = false;
 
     // Core state
-    this.grid = new GameGrid(GAME_WIDTH, GAME_HEIGHT);
     this.player = new Player(this.grid);
     this.sparxMgr = new SparxManager(this.grid);
     this.qixList = [];
@@ -1378,6 +1386,8 @@ class QixGame {
     const gh = this.grid.height;
     const sx = this.scaleX;
     const sy = this.scaleY;
+    const ox = this.offsetX;
+    const oy = this.offsetY;
 
     const hasImage = this.currentBgImage && this.currentBgImage.complete && this.currentBgImage.naturalWidth > 0;
 
@@ -1396,7 +1406,7 @@ class QixGame {
           const cell = this.grid.cells[row + x];
           if (cell === CELL_CLAIMED_SLOW || cell === CELL_CLAIMED_FAST) {
             hasClaimed = true;
-            this.maskCtx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+            this.maskCtx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
           }
         }
       }
@@ -1418,10 +1428,10 @@ class QixGame {
             const cell = this.grid.cells[row + x];
             if (cell === CELL_CLAIMED_FAST) {
               ctx.fillStyle = 'rgba(0, 140, 255, 0.15)';
-              ctx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+              ctx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
             } else if (cell === CELL_CLAIMED_SLOW) {
               ctx.fillStyle = 'rgba(255, 80, 0, 0.12)';
-              ctx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+              ctx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
             }
           }
         }
@@ -1433,10 +1443,10 @@ class QixGame {
           const cell = this.grid.cells[y * gw + x];
           if (cell === CELL_CLAIMED_SLOW) {
             ctx.fillStyle = this.slowPattern;
-            ctx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+            ctx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
           } else if (cell === CELL_CLAIMED_FAST) {
             ctx.fillStyle = this.fastPattern;
-            ctx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+            ctx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
           }
         }
       }
@@ -1449,7 +1459,7 @@ class QixGame {
         const row = y * gw;
         for (let x = 0; x < gw; x++) {
           if (this.grid.cells[row + x] === CELL_BORDER) {
-            ctx.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+            ctx.fillRect(ox + x * sx, oy + y * sy, sx + 0.5, sy + 0.5);
           }
         }
       }
@@ -1583,6 +1593,9 @@ class QixGame {
     // During LEVEL_CLEAR reward unveil: DO NOT draw Qix, Sparx, or player!
     // The entire artwork is displayed 100% unobstructed!
     if (this.state !== 'LEVEL_CLEAR') {
+      ctx.save();
+      ctx.translate(this.offsetX, this.offsetY);
+
       // 2. Render Qix entities (chaotic neon ribbon trails)
       for (const qix of this.qixList) {
         qix.render(ctx, this.scaleX, this.scaleY);
@@ -1593,6 +1606,8 @@ class QixGame {
 
       // 4. Render Player marker, active Stix, and sizzling Fuse
       this.player.render(ctx, this.scaleX, this.scaleY);
+
+      ctx.restore();
     }
 
     // 5. Render floating score popups
@@ -1750,8 +1765,8 @@ class QixGame {
   spawnFloatingScore(text, gx, gy, color = '#ffea00') {
     this.floatingScores.push({
       text,
-      x: gx * this.scaleX,
-      y: gy * this.scaleY,
+      x: this.offsetX + gx * this.scaleX,
+      y: this.offsetY + gy * this.scaleY,
       color,
       life: 1.2,
       maxLife: 1.2

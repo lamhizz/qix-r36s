@@ -10,7 +10,7 @@ const CELL_CLAIMED_FAST = 3; // Cyan / blue (single points)
 const CELL_STIX = 4;
 
 class GameGrid {
-  constructor(width = 240, height = 300) {
+  constructor(width = 480, height = 300) {
     this.width = width;
     this.height = height;
     this.size = width * height;
@@ -18,6 +18,10 @@ class GameGrid {
     this.totalInnerCells = (width - 2) * (height - 2);
     this.claimedCount = 0;
     this.init();
+  }
+
+  getAspectRatio() {
+    return this.width / this.height;
   }
 
   init() {

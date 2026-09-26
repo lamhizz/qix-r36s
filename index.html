@@ -2,34 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>QIX - Classic 1981 Arcade Game</title>
-  <meta name="description" content="Faithful recreation of the classic 1981 Taito arcade game Qix with authentic vector physics, dual draw speeds, fuse, Sparx, procedural 8-bit sound effects, and neon CRT aesthetics.">
-
-  <!-- Search Engine & Image Crawler Restrictions -->
-  <meta name="robots" content="noindex, nofollow, noimageindex, noarchive, nocache, nosnippet">
-  <meta name="googlebot" content="noindex, nofollow, noimageindex, noarchive, nosnippet">
-  <meta name="googlebot-image" content="noindex, nofollow">
-
-  <!-- PWA Meta & Icons -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#05070d">
-  <meta name="application-name" content="QIX Arcade">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="QIX Arcade">
-  <meta name="msapplication-TileColor" content="#05070d">
-  <meta name="msapplication-TileImage" content="icons/icon-192.png">
-  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
-
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -47,7 +21,6 @@
     </button>
     <div class="header-actions" id="header-actions">
       <button id="btn-lock-cabinet" class="btn-icon" style="border-color: #ff0077; color: #ff0077;" title="Lock Arcade Cabinet">🔒 LOCK</button>
-      <button id="btn-install-pwa" class="btn-icon hidden" style="border-color: #00ff88; color: #00ff88;" title="Install QIX Web App">📲 INSTALL</button>
       <button id="btn-custom-image" class="btn-icon" title="Load Custom Image (JPG, JPEG, PNG)">🖼 ART</button>
       <input type="file" id="image-file-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" style="display:none">
       <button id="btn-achievements" class="btn-icon" style="border-color: #ffea00; color: #ffea00;" title="Achievements & Badges">🎖 BADGES</button>
@@ -187,7 +160,7 @@
 
       <!-- Game Screen & Canvas -->
       <div id="screen-container" class="screen-container crt-active">
-        <canvas id="game-canvas" width="960" height="600"></canvas>
+        <canvas id="game-canvas" width="640" height="480"></canvas>
 
         <!-- Title Screen Overlay -->
         <div id="title-screen" class="overlay-screen">
@@ -519,39 +492,6 @@
     </div>
   </div>
 
-  <!-- PWA Offline / Online Status Toast -->
-  <div id="pwa-status-toast" class="pwa-toast hidden" role="status" aria-live="polite">
-    <span class="pwa-toast-icon" id="pwa-toast-icon">⚡</span>
-    <span class="pwa-toast-text" id="pwa-toast-text">OFFLINE ARCADE READY</span>
-  </div>
-
-  <!-- iOS PWA Install Instruction Modal -->
-  <div id="ios-install-modal" class="modal-backdrop hidden">
-    <div class="modal-content" style="max-width: 440px;">
-      <div class="modal-header">
-        <h2 style="font-size: 14px;">📲 INSTALL QIX ARCADE</h2>
-        <button id="btn-close-ios-install" class="btn-icon">✕ CLOSE</button>
-      </div>
-      <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px; font-family: var(--font-ui);">
-        Install QIX as a native web app to play in full screen offline directly from your home screen.
-      </p>
-      <div class="ios-install-steps">
-        <div class="ios-step">
-          <div class="ios-step-num">1</div>
-          <div class="ios-step-text">Tap the <span class="ios-icon-badge">Share ⎋</span> icon at the bottom of Safari.</div>
-        </div>
-        <div class="ios-step">
-          <div class="ios-step-num">2</div>
-          <div class="ios-step-text">Scroll down the menu and select <strong style="color: #00ff88;">Add to Home Screen ➕</strong>.</div>
-        </div>
-        <div class="ios-step">
-          <div class="ios-step-num">3</div>
-          <div class="ios-step-text">Tap <strong>Add</strong> in the top-right corner to launch QIX anytime!</div>
-        </div>
-      </div>
-      <button id="btn-ios-install-ok" class="arcade-btn-primary" style="width: 100%; margin-top: 12px;">GOT IT!</button>
-    </div>
-  </div>
 
   <!-- Achievements & Badges Modal -->
   <div id="achievements-modal" class="modal-backdrop hidden">
@@ -599,133 +539,8 @@
   <script src="js/progression.js?v=5"></script>
   <script src="js/game.js?v=5"></script>
 
-  <!-- PWA Service Worker Registration, Install & Lifecycle Experience -->
   <script>
-    // 1. Service Worker Registration & Automatic Instant Updates
-    if ('serviceWorker' in navigator) {
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!refreshing) {
-          refreshing = true;
-          console.log('[PWA] New controller active - refreshing page to load latest version');
-          window.location.reload();
-        }
-      });
-
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then((reg) => {
-            console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
-
-            // Handle background update notifications: activate immediately
-            reg.addEventListener('updatefound', () => {
-              const newWorker = reg.installing;
-              if (newWorker) {
-                newWorker.addEventListener('statechange', () => {
-                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('[PWA] New version ready - forcing instant activation');
-                    newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  }
-                });
-              }
-            });
-          })
-          .catch((err) => console.warn('[PWA] ServiceWorker registration failed:', err));
-      });
-    }
-
-    // 2. Standalone Mode Detection & Install Prompt Handling
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    if (isStandalone) {
-      document.body.classList.add('pwa-standalone');
-    }
-
-    let deferredPrompt = null;
-    const installBtn = document.getElementById('btn-install-pwa');
-    const iosInstallModal = document.getElementById('ios-install-modal');
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-    // Show install button on iOS if not standalone
-    if (isIos && !isStandalone && installBtn) {
-      installBtn.classList.remove('hidden');
-    }
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      if (installBtn && !isStandalone) {
-        installBtn.classList.remove('hidden');
-      }
-    });
-
-    if (installBtn) {
-      installBtn.addEventListener('click', async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          console.log('[PWA] Install prompt outcome:', outcome);
-          deferredPrompt = null;
-          installBtn.classList.add('hidden');
-        } else {
-          // Open guidance modal for iOS or desktop browsers without direct prompt
-          if (iosInstallModal) iosInstallModal.classList.remove('hidden');
-        }
-      });
-    }
-
-    const closeIosModal = () => {
-      if (iosInstallModal) iosInstallModal.classList.add('hidden');
-    };
-    document.getElementById('btn-close-ios-install')?.addEventListener('click', closeIosModal);
-    document.getElementById('btn-ios-install-ok')?.addEventListener('click', closeIosModal);
-
-    window.addEventListener('appinstalled', () => {
-      console.log('[PWA] QIX was installed!');
-      if (installBtn) installBtn.classList.add('hidden');
-      deferredPrompt = null;
-    });
-
-    // 3. Network Status Toast (Offline / Online)
-    const toast = document.getElementById('pwa-status-toast');
-    const toastIcon = document.getElementById('pwa-toast-icon');
-    const toastText = document.getElementById('pwa-toast-text');
-    let toastTimeout = null;
-
-    function showPwaToast(message, icon, type, duration = 3500) {
-      if (!toast) return;
-      clearTimeout(toastTimeout);
-      if (toastText) toastText.textContent = message;
-      if (toastIcon) toastIcon.textContent = icon;
-      toast.className = `pwa-toast ${type}`;
-      toastTimeout = setTimeout(() => {
-        toast.classList.add('hidden');
-      }, duration);
-    }
-
-    window.addEventListener('offline', () => {
-      showPwaToast('OFFLINE PLAY ENABLED', '⚡', 'offline', 4000);
-    });
-
-    window.addEventListener('online', () => {
-      showPwaToast('ONLINE - RECONNECTED', '🟢', 'online', 3000);
-    });
-
-    // 4. URL App Shortcuts Action Handler (?action=scores or ?action=newgame)
-    window.addEventListener('DOMContentLoaded', () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const action = urlParams.get('action');
-      if (action === 'scores') {
-        setTimeout(() => {
-          document.getElementById('btn-leaderboard')?.click();
-        }, 350);
-      } else if (action === 'newgame') {
-        setTimeout(() => {
-          document.getElementById('btn-start-game')?.click();
-        }, 350);
-      }
-    });
-
-    // 5. Arcade Security Clearance Terminal Controller
+    // Arcade Security Clearance Terminal Controller
     const lockScreen = document.getElementById('security-lock-screen');
     const lockCard = document.getElementById('security-card');
     const passInput = document.getElementById('security-pass-input');
