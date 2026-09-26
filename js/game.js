@@ -179,6 +179,29 @@ class QixGame {
     this.floatingScores = []; // Animated +points text objects
     this.nearTargetAnnounced = false;
 
+    // Cached DOM elements for 60fps GC-free updates on RK3326
+    this.screenElem = document.getElementById('screen-container');
+    this.hudScoreEl = document.getElementById('hud-score');
+    this.hudHighScoreEl = document.getElementById('hud-high-score');
+    this.hudLevelEl = document.getElementById('hud-level');
+    this.hudMultEl = document.getElementById('hud-multiplier');
+    this.hudGoalEl = document.getElementById('hud-target-goal');
+    this.hudPercentEl = document.getElementById('hud-percent');
+    this.percentBarFill = document.getElementById('percent-bar-fill');
+    this.sparxBarFill = document.getElementById('sparx-bar-fill');
+    this.livesContainer = document.getElementById('hud-lives');
+
+    // Cached last rendered HUD values to avoid redundant DOM writes
+    this._lastScore = -1;
+    this._lastHighScore = -1;
+    this._lastLevel = -1;
+    this._lastMultiplier = -1;
+    this._lastTarget = -1;
+    this._lastPercent = -1;
+    this._lastLives = -1;
+    this._lastSparxRatio = -1;
+    this._lastDanger = false;
+
     // Transition animations
     this.bannerText = '';
     this.bannerSubtext = '';
@@ -197,6 +220,9 @@ class QixGame {
     };
 
     this.keysDown = {};
+    this.prevGamepadButtons = {};
+    this.initialsChars = ['A', 'A', 'A'];
+    this.initialsIndex = 0;
     this.lastTime = 0;
 
     this.initPattern();
@@ -669,9 +695,6 @@ class QixGame {
       closeStatsBtn.addEventListener('touchend', handleCloseStats);
     }
 
-    // Touch & Swipe gestures on canvas
-    this.setupTouchGestures();
-
     // Custom image loader (.jpg, .jpeg, .png)
     const customImgBtn = document.getElementById('btn-custom-image');
     const fileInput = document.getElementById('image-file-input');
@@ -1028,10 +1051,10 @@ class QixGame {
     if (this.keysDown['ArrowLeft'] || this.keysDown['KeyA']) dx -= 1;
     if (this.keysDown['ArrowRight'] || this.keysDown['KeyD']) dx += 1;
 
-    const fastDraw = !!(this.keysDown['Space'] || this.keysDown['KeyJ']);
-    const slowDraw = !!(this.keysDown['ShiftLeft'] || this.keysDown['ShiftRight'] || this.keysDown['KeyK']);
-
-    this.input = { dx, dy, fastDraw, slowDraw };
+    this.input.dx = dx;
+    this.input.dy = dy;
+    this.input.fastDraw = !!(this.keysDown['Space'] || this.keysDown['KeyJ']);
+    this.input.slowDraw = !!(this.keysDown['ShiftLeft'] || this.keysDown['ShiftRight'] || this.keysDown['KeyK']);
   }
 
   handleAreaCaptured(result) {
@@ -1284,7 +1307,9 @@ class QixGame {
     if (this.checkHighScoreQualify()) {
       const initialsOverlay = document.getElementById('initials-entry-overlay');
       const input = document.getElementById('initials-input');
-      if (input) input.value = '';
+      this.initialsChars = ['A', 'A', 'A'];
+      this.initialsIndex = 0;
+      if (input) input.value = 'AAA';
       if (initialsOverlay) initialsOverlay.classList.remove('hidden');
       setTimeout(() => {
         if (input) input.focus();
@@ -1325,49 +1350,71 @@ class QixGame {
   }
 
   updateHUD() {
-    document.getElementById('hud-score').textContent = this.score.toLocaleString();
-    document.getElementById('hud-high-score').textContent = this.highScore.toLocaleString();
-    document.getElementById('hud-level').textContent = this.level.toString();
-    document.getElementById('hud-multiplier').textContent = `x${this.multiplier}`;
+    if (this.hudScoreEl && this.score !== this._lastScore) {
+      this._lastScore = this.score;
+      this.hudScoreEl.textContent = this.score.toLocaleString();
+    }
 
-    const goalEl = document.getElementById('hud-target-goal');
-    if (goalEl) goalEl.textContent = `${this.targetPercent}%`;
+    if (this.hudHighScoreEl && this.highScore !== this._lastHighScore) {
+      this._lastHighScore = this.highScore;
+      this.hudHighScoreEl.textContent = this.highScore.toLocaleString();
+    }
+
+    if (this.hudLevelEl && this.level !== this._lastLevel) {
+      this._lastLevel = this.level;
+      this.hudLevelEl.textContent = this.level.toString();
+    }
+
+    if (this.hudMultEl && this.multiplier !== this._lastMultiplier) {
+      this._lastMultiplier = this.multiplier;
+      this.hudMultEl.textContent = `x${this.multiplier}`;
+    }
+
+    if (this.hudGoalEl && this.targetPercent !== this._lastTarget) {
+      this._lastTarget = this.targetPercent;
+      this.hudGoalEl.textContent = `${this.targetPercent}%`;
+    }
 
     // Claimed gauge against dynamic level target
-    const percentEl = document.getElementById('hud-percent');
-    if (percentEl) percentEl.textContent = `${this.claimedPercent}%`;
-    const isNearGoal = (this.claimedPercent >= this.targetPercent - 5) && (this.claimedPercent < this.targetPercent);
-    const barEl = document.getElementById('percent-bar-fill');
-    if (barEl) {
-      barEl.style.width = `${Math.min(100, (this.claimedPercent / this.targetPercent) * 100)}%`;
-      barEl.classList.toggle('near-goal', isNearGoal);
-      if (this.claimedPercent >= this.targetPercent) {
-        barEl.classList.add('threshold-met');
-      } else {
-        barEl.classList.remove('threshold-met');
+    if (this.hudPercentEl && this.claimedPercent !== this._lastPercent) {
+      this._lastPercent = this.claimedPercent;
+      this.hudPercentEl.textContent = `${this.claimedPercent}%`;
+
+      if (this.percentBarFill) {
+        const isNearGoal = (this.claimedPercent >= this.targetPercent - 5) && (this.claimedPercent < this.targetPercent);
+        this.percentBarFill.style.width = `${Math.min(100, (this.claimedPercent / this.targetPercent) * 100)}%`;
+        this.percentBarFill.classList.toggle('near-goal', isNearGoal);
+        if (this.claimedPercent >= this.targetPercent) {
+          this.percentBarFill.classList.add('threshold-met');
+        } else {
+          this.percentBarFill.classList.remove('threshold-met');
+        }
       }
     }
 
     // Sparx gauge
-    const sparxBar = document.getElementById('sparx-bar-fill');
-    if (sparxBar && this.sparxMgr) {
+    if (this.sparxBarFill && this.sparxMgr) {
       const ratio = Math.max(0, this.sparxMgr.timer / this.sparxMgr.sparxTimerMax);
-      sparxBar.style.width = `${ratio * 100}%`;
-      if (ratio < 0.25) {
-        sparxBar.classList.add('urgent');
-      } else {
-        sparxBar.classList.remove('urgent');
+      const roundedRatio = Math.round(ratio * 100);
+      if (roundedRatio !== this._lastSparxRatio) {
+        this._lastSparxRatio = roundedRatio;
+        this.sparxBarFill.style.width = `${ratio * 100}%`;
+        if (ratio < 0.25) {
+          this.sparxBarFill.classList.add('urgent');
+        } else {
+          this.sparxBarFill.classList.remove('urgent');
+        }
       }
     }
 
     // Lives display
-    const livesContainer = document.getElementById('hud-lives');
-    if (livesContainer) {
-      livesContainer.innerHTML = '';
+    if (this.livesContainer && this.lives !== this._lastLives) {
+      this._lastLives = this.lives;
+      this.livesContainer.innerHTML = '';
       for (let i = 0; i < this.lives; i++) {
         const d = document.createElement('span');
         d.className = 'life-diamond';
-        livesContainer.appendChild(d);
+        this.livesContainer.appendChild(d);
       }
     }
   }
@@ -1476,6 +1523,9 @@ class QixGame {
       return;
     }
 
+    // Poll physical Gamepad controls (R36S / PortMaster WebX)
+    this.pollGamepad();
+
     this.update(dt);
     this.render();
 
@@ -1564,9 +1614,9 @@ class QixGame {
           if (nearDanger) break;
         }
       }
-      const screenElem = document.getElementById('screen-container');
-      if (screenElem) {
-        screenElem.classList.toggle('danger-alert', nearDanger);
+      if (this.screenElem && nearDanger !== this._lastDanger) {
+        this._lastDanger = nearDanger;
+        this.screenElem.classList.toggle('danger-alert', nearDanger);
       }
 
       this.updateHUD();
@@ -1663,7 +1713,7 @@ class QixGame {
     ctx.shadowColor = '#00f0ff';
     ctx.shadowBlur = 8;
     ctx.font = '10px "Press Start 2P", monospace, sans-serif';
-    ctx.fillText(this.bannerSubtext || 'PRESS SPACE OR WAIT TO CONTINUE ▶', w / 2, barY + 44);
+    ctx.fillText(this.bannerSubtext || 'PRESS (A) OR START TO CONTINUE ▶', w / 2, barY + 44);
 
     ctx.restore();
   }
@@ -1774,56 +1824,178 @@ class QixGame {
   }
 
   // ==========================================
-  // MOBILE TOUCH & SWIPE GESTURES
+  // GAMEPAD API POLLING (R36S / PortMaster WebX)
   // ==========================================
-  setupTouchGestures() {
-    const canvas = this.canvas;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let swiping = false;
+  pollGamepad() {
+    if (typeof navigator === 'undefined' || !navigator.getGamepads) return;
+    const gamepads = navigator.getGamepads();
+    if (!gamepads) return;
 
-    canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        const t = e.touches[0];
-        touchStartX = t.clientX;
-        touchStartY = t.clientY;
-        swiping = true;
-        if (window.soundEngine) window.soundEngine.ensureContext();
+    let gp = null;
+    for (let i = 0; i < gamepads.length; i++) {
+      if (gamepads[i] && gamepads[i].connected) {
+        gp = gamepads[i];
+        break;
       }
-    }, { passive: false });
+    }
+    if (!gp) return;
 
-    canvas.addEventListener('touchmove', (e) => {
-      if (!swiping || e.touches.length === 0) return;
-      e.preventDefault();
-      const t = e.touches[0];
-      const dx = t.clientX - touchStartX;
-      const dy = t.clientY - touchStartY;
-      const threshold = 16;
-
-      if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
-        this.keysDown['ArrowUp'] = false;
-        this.keysDown['ArrowDown'] = false;
-        this.keysDown['ArrowLeft'] = false;
-        this.keysDown['ArrowRight'] = false;
-
-        if (Math.abs(dx) > Math.abs(dy)) {
-          if (dx > 0) this.keysDown['ArrowRight'] = true;
-          else this.keysDown['ArrowLeft'] = true;
-        } else {
-          if (dy > 0) this.keysDown['ArrowDown'] = true;
-          else this.keysDown['ArrowUp'] = true;
-        }
-        touchStartX = t.clientX;
-        touchStartY = t.clientY;
-        triggerHaptic(12);
-      }
-    }, { passive: false });
-
-    const endSwipe = () => {
-      swiping = false;
+    const isBtnPressed = (index) => {
+      const b = gp.buttons && gp.buttons[index];
+      return b ? (typeof b === 'object' ? b.pressed : b > 0.5) : false;
     };
-    canvas.addEventListener('touchend', endSwipe, { passive: false });
-    canvas.addEventListener('touchcancel', endSwipe, { passive: false });
+
+    // Hardware Audio Unlock on first physical button press
+    if (window.soundEngine && !window.soundEngine.audioUnlocked) {
+      let anyBtn = false;
+      if (gp.buttons) {
+        for (let i = 0; i < gp.buttons.length; i++) {
+          if (isBtnPressed(i)) {
+            anyBtn = true;
+            break;
+          }
+        }
+      }
+      if (anyBtn) {
+        window.soundEngine.unlockAudio();
+      }
+    }
+
+    // Edge-triggered button detection (single press per actuation)
+    const justPressed = (btnIndex) => {
+      const pressed = isBtnPressed(btnIndex);
+      const was = !!this.prevGamepadButtons[btnIndex];
+      return pressed && !was;
+    };
+
+    // R36S PortMaster Standard Mapping:
+    // Axes: 0 (X), 1 (Y) with deadzone 0.25
+    // Buttons:
+    // 0: A (Fast Draw / Confirm)
+    // 1: B (Slow Draw / Cancel)
+    // 2: X, 3: Y
+    // 8: Select (Audio Mute Toggle)
+    // 9: Start (Pause / Start Game / Advance)
+    // 12: D-Pad Up, 13: D-Pad Down, 14: D-Pad Left, 15: D-Pad Right
+
+    const axisX = gp.axes && gp.axes.length > 0 ? gp.axes[0] : 0;
+    const axisY = gp.axes && gp.axes.length > 1 ? gp.axes[1] : 0;
+    const deadzone = 0.25;
+
+    const dpadUp = isBtnPressed(12) || axisY < -deadzone;
+    const dpadDown = isBtnPressed(13) || axisY > deadzone;
+    const dpadLeft = isBtnPressed(14) || axisX < -deadzone;
+    const dpadRight = isBtnPressed(15) || axisX > deadzone;
+
+    const btnA = isBtnPressed(0);
+    const btnB = isBtnPressed(1);
+    const btnStart = isBtnPressed(9);
+    const btnSelect = isBtnPressed(8);
+
+    // Map to keysDown states for transparent integration
+    this.keysDown['ArrowUp'] = dpadUp;
+    this.keysDown['ArrowDown'] = dpadDown;
+    this.keysDown['ArrowLeft'] = dpadLeft;
+    this.keysDown['ArrowRight'] = dpadRight;
+    this.keysDown['Space'] = btnA;
+    this.keysDown['ShiftLeft'] = btnB;
+
+    // Handle Start button (Start new game / Pause / Resume / Advance level)
+    if (justPressed(9)) {
+      if (this.state === 'TITLE' || this.state === 'GAME_OVER') {
+        this.startNewGame();
+      } else if (this.state === 'PLAYING' || this.state === 'PAUSED') {
+        this.togglePause();
+      } else if (this.state === 'LEVEL_CLEAR' && this.canAdvanceLevel) {
+        this.advanceNextLevel();
+      }
+    }
+
+    // Handle Select button (Toggle audio mute)
+    if (justPressed(8)) {
+      if (window.soundEngine) {
+        const isMuted = window.soundEngine.toggleMute();
+        this.updateAudioButton(isMuted);
+      }
+    }
+
+    // Handle Title Screen & Game Over with A or Start
+    if (this.state === 'TITLE' || this.state === 'GAME_OVER') {
+      if (justPressed(0)) {
+        this.startNewGame();
+      }
+    }
+
+    // Handle Level Clear advance with A or B button
+    if (this.state === 'LEVEL_CLEAR' && this.canAdvanceLevel) {
+      if (justPressed(0) || justPressed(1)) {
+        this.advanceNextLevel();
+      }
+    }
+
+    // Handle Initials Entry via Gamepad D-pad & A/B buttons
+    const initialsOverlay = document.getElementById('initials-entry-overlay');
+    if (initialsOverlay && !initialsOverlay.classList.contains('hidden')) {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!? ';
+      let currChar = this.initialsChars[this.initialsIndex] || 'A';
+      let charIdx = chars.indexOf(currChar);
+      if (charIdx === -1) charIdx = 0;
+
+      if (justPressed(12) || (axisY < -0.6 && !this.prevGamepadButtons['axisYUp'])) {
+        // Up: Cycle previous character
+        charIdx = (charIdx - 1 + chars.length) % chars.length;
+        this.initialsChars[this.initialsIndex] = chars[charIdx];
+        this.syncInitialsInput();
+      } else if (justPressed(13) || (axisY > 0.6 && !this.prevGamepadButtons['axisYDown'])) {
+        // Down: Cycle next character
+        charIdx = (charIdx + 1) % chars.length;
+        this.initialsChars[this.initialsIndex] = chars[charIdx];
+        this.syncInitialsInput();
+      }
+
+      if (justPressed(14) || (axisX < -0.6 && !this.prevGamepadButtons['axisXLeft'])) {
+        // Left: Move to previous letter slot
+        this.initialsIndex = Math.max(0, this.initialsIndex - 1);
+      } else if (justPressed(15) || (axisX > 0.6 && !this.prevGamepadButtons['axisXRight'])) {
+        // Right: Move to next letter slot
+        this.initialsIndex = Math.min(2, this.initialsIndex + 1);
+      }
+
+      if (justPressed(0)) {
+        // A Button: Confirm slot or submit record
+        if (this.initialsIndex < 2) {
+          this.initialsIndex++;
+        } else {
+          const finalName = this.initialsChars.join('');
+          this.submitHighScore(finalName);
+          initialsOverlay.classList.add('hidden');
+          const lbOverlay = document.getElementById('leaderboard-overlay');
+          if (lbOverlay) lbOverlay.classList.remove('hidden');
+        }
+      } else if (justPressed(1)) {
+        // B Button: Backtrack slot
+        this.initialsIndex = Math.max(0, this.initialsIndex - 1);
+      }
+
+      this.prevGamepadButtons['axisYUp'] = axisY < -0.6;
+      this.prevGamepadButtons['axisYDown'] = axisY > 0.6;
+      this.prevGamepadButtons['axisXLeft'] = axisX < -0.6;
+      this.prevGamepadButtons['axisXRight'] = axisX > 0.6;
+    }
+
+    // Cache current button states for next frame
+    if (gp.buttons) {
+      for (let i = 0; i < gp.buttons.length; i++) {
+        this.prevGamepadButtons[i] = isBtnPressed(i);
+      }
+    }
+  }
+
+  syncInitialsInput() {
+    const input = document.getElementById('initials-input');
+    if (input) {
+      input.value = this.initialsChars.join('');
+    }
   }
 }
 

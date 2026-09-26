@@ -18,6 +18,7 @@ class SoundEngine {
     this.qixGain = null;
 
     this.initialized = false;
+    this.audioUnlocked = false;
   }
 
   init() {
@@ -34,12 +35,22 @@ class SoundEngine {
     }
   }
 
+  unlockAudio() {
+    this.ensureContext();
+    this.audioUnlocked = !!(this.ctx && this.ctx.state === 'running');
+    return this.audioUnlocked;
+  }
+
   ensureContext() {
     if (!this.initialized) {
       this.init();
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().then(() => {
+        this.audioUnlocked = true;
+      }).catch(() => {});
+    } else if (this.ctx && this.ctx.state === 'running') {
+      this.audioUnlocked = true;
     }
   }
 
