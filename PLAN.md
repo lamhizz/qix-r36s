@@ -28,3 +28,9 @@ Migrate the existing responsive HTML5/JS Qix web game to a native-feeling R36S P
 ## Phase 5: Storage & Performance Optimization
 * **Task 5.1:** Verify `js/progression.js` uses standard synchronous `localStorage` for high scores and level unlocks.
 * **Task 5.2:** Audit the `requestAnimationFrame` loop in `js/game.js` to ensure no massive arrays or objects are being instantiated every frame, preventing garbage collection stutter on the 1GB RAM hardware.
+
+## Phase 6: Console UI Pruning & Board Maximization (Completed)
+* **Task 6.1:** Remove top header navigation bar (`.app-header`), hamburger button, and mobile backdrop completely from `index.html` and styles.
+* **Task 6.2:** Remove virtual touch/mouse hardware controller panel (`.controls-panel`) completely since R36S uses physical Gamepad controls.
+* **Task 6.3:** Maximize the game board: reduced HUD deck overlay to 28px and expanded playfield grid to 480x339, rendering at 640x452 with square pixels (4/3 ratio), completely eliminating empty vertical letterboxing.
+* **Task 6.4:** Implement full Console System Menu accessible via START button (Button 9 / KeyP / Escape) with Gamepad D-pad UP/DOWN item selection, LEFT/RIGHT option switching (Difficulty & Cabinet Theme), CRT scanline toggle, Audio mute toggle, Hall of Fame, Badges, and Help.

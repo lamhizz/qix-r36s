@@ -61,6 +61,17 @@
   -webkit-user-select: none;
 }
 
+html {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+}
+
 body {
   background-color: var(--bg-primary);
   background-image:
@@ -71,7 +82,11 @@ body {
   font-family: var(--font-ui);
   width: 640px;
   height: 480px;
-  margin: 0;
+  min-width: 640px;
+  min-height: 480px;
+  max-width: 640px;
+  max-height: 480px;
+  margin: auto;
   padding: 0;
   overflow: hidden;
   position: relative;
@@ -79,6 +94,11 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.95);
+}
+
+.hidden {
+  display: none !important;
 }
 
 /* App Header, Burger, and Backdrop - Hidden on R36S Console */
@@ -183,19 +203,19 @@ body {
   overflow: hidden;
 }
 
-/* HUD Command Deck Wrapper - Fixed 36px top status bar overlay */
+/* HUD Command Deck Wrapper - Fixed 28px top status bar overlay */
 .hud-deck {
   position: absolute;
   top: 0;
   left: 0;
   width: 640px;
-  height: 36px;
+  height: 28px;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
-  gap: 8px;
+  padding: 0 8px;
+  gap: 6px;
   background: linear-gradient(180deg, rgba(16, 24, 40, 0.96) 0%, rgba(8, 12, 20, 0.96) 100%);
   border-bottom: 1px solid rgba(0, 240, 255, 0.35);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
@@ -1894,34 +1914,34 @@ body.theme-matrix {
 .pause-menu-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-neon);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0, 240, 255, 0.1);
-  border-radius: 14px;
-  padding: 24px 20px;
-  width: 90%;
-  max-width: 360px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9), inset 0 0 20px rgba(0, 240, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px 18px;
+  width: 92%;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   text-align: center;
 }
 
 .pause-title {
-  font-size: 24px;
-  margin-bottom: 2px;
+  font-size: 20px;
+  margin-bottom: 0px;
 }
 
 .pause-subtitle {
   font-family: var(--font-arcade);
-  font-size: 9px;
-  color: var(--text-dim);
+  font-size: 8px;
+  color: var(--neon-cyan);
   letter-spacing: 1px;
 }
 
 .pause-actions-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 
@@ -1930,11 +1950,11 @@ body.theme-matrix {
   border: 1px solid rgba(255, 255, 255, 0.25);
   color: #fff;
   font-family: var(--font-arcade);
-  font-size: 11px;
-  padding: 12px 16px;
-  border-radius: 8px;
+  font-size: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .arcade-btn-secondary:hover {
@@ -1949,23 +1969,50 @@ body.theme-matrix {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 5px;
+  padding-top: 5px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .pause-section-title {
   font-family: var(--font-arcade);
-  font-size: 8px;
+  font-size: 7.5px;
   color: var(--neon-yellow);
   letter-spacing: 1px;
 }
 
+.pause-toggles-group {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.pause-toggle-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-dim);
+  font-family: var(--font-arcade);
+  font-size: 8px;
+  padding: 7px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.pause-toggle-btn.active {
+  background: rgba(0, 255, 136, 0.15);
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
 .pause-footer-links {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .pause-link-btn {
@@ -1974,16 +2021,41 @@ body.theme-matrix {
   border: 1px dashed rgba(255, 255, 255, 0.2);
   color: var(--text-dim);
   font-family: var(--font-arcade);
-  font-size: 8px;
-  padding: 8px 4px;
+  font-size: 7.5px;
+  padding: 7px 4px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .pause-link-btn:hover {
   border-color: var(--neon-cyan);
   color: var(--neon-cyan);
+}
+
+.pause-nav-hint {
+  font-family: var(--font-arcade);
+  font-size: 6.5px;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+
+.pause-nav-hint span {
+  color: var(--neon-cyan);
+}
+
+/* Gamepad Focus Ring for console navigation */
+.menu-nav-item.gamepad-focused {
+  outline: 2px solid var(--neon-cyan) !important;
+  border-color: var(--neon-cyan) !important;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.8), inset 0 0 6px rgba(0, 240, 255, 0.3) !important;
+  transform: scale(1.03);
 }
 
 /* ==========================================================================

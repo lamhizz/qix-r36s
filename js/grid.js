@@ -10,7 +10,7 @@ const CELL_CLAIMED_FAST = 3; // Cyan / blue (single points)
 const CELL_STIX = 4;
 
 class GameGrid {
-  constructor(width = 480, height = 300) {
+  constructor(width = 480, height = 339) {
     this.width = width;
     this.height = height;
     this.size = width * height;

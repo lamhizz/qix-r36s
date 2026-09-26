@@ -4,7 +4,8 @@
  */
 
 const GAME_WIDTH = 480;
-const GAME_HEIGHT = 300;
+const GAME_HEIGHT = 339;
+const HUD_HEIGHT = 28;
 const CLAIM_THRESHOLD = 75; // 75% required to clear level
 
 /**
@@ -124,13 +125,13 @@ class QixGame {
     // Discrete playfield grid
     this.grid = new GameGrid(GAME_WIDTH, GAME_HEIGHT);
 
-    // Calculate grid scale and centering to maximize 640x480 space while preserving original aspect ratio
-    const scale = Math.min(this.canvas.width / this.grid.width, this.canvas.height / this.grid.height);
-    this.scale = scale;
-    this.scaleX = scale;
-    this.scaleY = scale;
-    this.offsetX = Math.floor((this.canvas.width - this.grid.width * scale) / 2);
-    this.offsetY = Math.floor((this.canvas.height - this.grid.height * scale) / 2);
+    // Maximize 640x480 space below the 28px top HUD (exact 4/3 aspect ratio, square pixels)
+    this.scaleX = this.canvas.width / this.grid.width;
+    this.scaleY = (this.canvas.height - HUD_HEIGHT) / this.grid.height;
+    this.scale = this.scaleX;
+    this.offsetX = 0;
+    this.offsetY = HUD_HEIGHT;
+    this.pauseFocusIndex = 0;
 
     // Offscreen canvas for fast cached background rendering
     this.bgCanvas = document.createElement('canvas');
@@ -297,10 +298,59 @@ class QixGame {
         window.soundEngine.ensureContext();
       }
 
-      if (e.code === 'KeyP') {
+      if (this.isModalOpen()) {
+        if (e.code === 'Escape' || e.code === 'KeyB' || e.code === 'KeyP') {
+          this.closeAllModals();
+          e.preventDefault();
+          return;
+        }
+      }
+
+      if (e.code === 'KeyP' || e.code === 'Escape') {
         this.togglePause();
         e.preventDefault();
         return;
+      }
+
+      if (this.state === 'PAUSED') {
+        if (e.code === 'ArrowUp') {
+          this.setPauseFocus(this.pauseFocusIndex - 1);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'ArrowDown') {
+          this.setPauseFocus(this.pauseFocusIndex + 1);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'ArrowLeft') {
+          this.handlePauseLeftRight(-1);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'ArrowRight') {
+          this.handlePauseLeftRight(1);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'Space' || e.code === 'Enter') {
+          this.activatePauseFocusedItem();
+          e.preventDefault();
+          return;
+        }
+      }
+
+      if (this.state === 'TITLE') {
+        if (e.code === 'ArrowLeft') {
+          this.cycleTitleDifficulty(-1);
+          e.preventDefault();
+          return;
+        }
+        if (e.code === 'ArrowRight') {
+          this.cycleTitleDifficulty(1);
+          e.preventDefault();
+          return;
+        }
       }
 
       if (e.code === 'KeyM') {
@@ -592,6 +642,30 @@ class QixGame {
       });
     }
 
+    const pauseLbBtn = document.getElementById('btn-pause-leaderboard');
+    if (pauseLbBtn) {
+      pauseLbBtn.addEventListener('click', () => {
+        openLeaderboard();
+      });
+    }
+
+    const pauseCrtBtn = document.getElementById('btn-pause-crt');
+    if (pauseCrtBtn) {
+      pauseCrtBtn.addEventListener('click', () => {
+        this.toggleCRT();
+      });
+    }
+
+    const pauseMuteBtn = document.getElementById('btn-pause-mute');
+    if (pauseMuteBtn) {
+      pauseMuteBtn.addEventListener('click', () => {
+        if (window.soundEngine) {
+          const isMuted = window.soundEngine.toggleMute();
+          this.updateAudioButton(isMuted);
+        }
+      });
+    }
+
     // Difficulty selection button listeners
     document.querySelectorAll('.diff-select-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -767,11 +841,155 @@ class QixGame {
     });
   }
 
+  isModalOpen() {
+    const modals = ['help-modal', 'leaderboard-modal', 'achievements-modal'];
+    return modals.some(id => {
+      const el = document.getElementById(id);
+      return el && !el.classList.contains('hidden');
+    });
+  }
+
+  closeAllModals() {
+    ['help-modal', 'leaderboard-modal', 'achievements-modal'].forEach(id => {
+      document.getElementById(id)?.classList.add('hidden');
+    });
+  }
+
+  syncPauseToggles() {
+    const crtBtn = document.getElementById('btn-pause-crt');
+    if (crtBtn) {
+      const isCrt = document.getElementById('screen-container')?.classList.contains('crt-active');
+      crtBtn.textContent = isCrt ? '📺 CRT FILTER: ON' : '📺 CRT FILTER: OFF';
+      crtBtn.classList.toggle('active', isCrt);
+    }
+    const muteBtn = document.getElementById('btn-pause-mute');
+    if (muteBtn && window.soundEngine) {
+      const isMuted = window.soundEngine.muted;
+      muteBtn.textContent = isMuted ? '🔇 AUDIO: OFF' : '🔊 AUDIO: ON';
+      muteBtn.classList.toggle('active', !isMuted);
+    }
+  }
+
+  toggleCRT() {
+    const sc = document.getElementById('screen-container');
+    if (sc) sc.classList.toggle('crt-active');
+    this.syncPauseToggles();
+  }
+
+  cycleTitleDifficulty(dir) {
+    const diffs = ['beginner', 'normal', 'master'];
+    const currentDiff = window.ProgressionManager ? window.ProgressionManager.difficulty : 'normal';
+    let idx = diffs.indexOf(currentDiff);
+    idx = ((idx + dir) % diffs.length + diffs.length) % diffs.length;
+    if (window.ProgressionManager) {
+      window.ProgressionManager.setDifficulty(diffs[idx]);
+      this.targetPercent = this.getTargetPercent(this.level);
+      this.player.setDifficultyConfig(window.ProgressionManager.getDifficultyConfig());
+      this.updateHUD();
+    }
+  }
+
+  getPauseMenuItems() {
+    return [
+      document.getElementById('btn-pause-resume'),
+      document.getElementById('btn-pause-restart'),
+      document.querySelector('#pause-overlay .diff-buttons-group'),
+      document.querySelector('#pause-overlay .theme-buttons-group'),
+      document.getElementById('btn-pause-crt'),
+      document.getElementById('btn-pause-mute'),
+      document.getElementById('btn-pause-achievements'),
+      document.getElementById('btn-pause-leaderboard'),
+      document.getElementById('btn-pause-help')
+    ].filter(Boolean);
+  }
+
+  setPauseFocus(index) {
+    const items = this.getPauseMenuItems();
+    if (!items.length) return;
+    this.pauseFocusIndex = ((index % items.length) + items.length) % items.length;
+    items.forEach((item, idx) => {
+      const isFocused = idx === this.pauseFocusIndex;
+      item.classList.toggle('gamepad-focused', isFocused);
+      if (item.classList.contains('diff-buttons-group') || item.classList.contains('theme-buttons-group')) {
+        const activeBtn = item.querySelector('.active') || item.firstElementChild;
+        if (activeBtn) activeBtn.classList.toggle('gamepad-focused', isFocused);
+      }
+    });
+  }
+
+  handlePauseLeftRight(dir) {
+    const items = this.getPauseMenuItems();
+    const current = items[this.pauseFocusIndex];
+    if (!current) return;
+
+    if (current.classList.contains('diff-buttons-group')) {
+      const diffs = ['beginner', 'normal', 'master'];
+      const currentDiff = window.ProgressionManager ? window.ProgressionManager.difficulty : 'normal';
+      let idx = diffs.indexOf(currentDiff);
+      idx = ((idx + dir) % diffs.length + diffs.length) % diffs.length;
+      if (window.ProgressionManager) {
+        window.ProgressionManager.setDifficulty(diffs[idx]);
+        this.targetPercent = this.getTargetPercent(this.level);
+        this.player.setDifficultyConfig(window.ProgressionManager.getDifficultyConfig());
+        this.updateHUD();
+      }
+      this.setPauseFocus(this.pauseFocusIndex);
+    } else if (current.classList.contains('theme-buttons-group')) {
+      const themes = ['classic', 'amber', 'matrix'];
+      const currentTheme = window.ProgressionManager ? window.ProgressionManager.currentTheme : 'classic';
+      let idx = themes.indexOf(currentTheme);
+      idx = ((idx + dir) % themes.length + themes.length) % themes.length;
+      if (window.ProgressionManager) {
+        window.ProgressionManager.setTheme(themes[idx]);
+        this.initPattern();
+        this.redrawBackground();
+      }
+      this.setPauseFocus(this.pauseFocusIndex);
+    }
+  }
+
+  activatePauseFocusedItem() {
+    const items = this.getPauseMenuItems();
+    const current = items[this.pauseFocusIndex];
+    if (!current) return;
+
+    if (current.id === 'btn-pause-resume') {
+      this.togglePause();
+    } else if (current.id === 'btn-pause-restart') {
+      this.togglePause();
+      this.startNewGame();
+    } else if (current.classList.contains('diff-buttons-group')) {
+      this.handlePauseLeftRight(1);
+    } else if (current.classList.contains('theme-buttons-group')) {
+      this.handlePauseLeftRight(1);
+    } else if (current.id === 'btn-pause-crt') {
+      this.toggleCRT();
+    } else if (current.id === 'btn-pause-mute') {
+      if (window.soundEngine) {
+        const isMuted = window.soundEngine.toggleMute();
+        this.updateAudioButton(isMuted);
+      }
+    } else if (current.id === 'btn-pause-achievements') {
+      if (window.ProgressionManager) window.ProgressionManager.renderAchievementsModal();
+      document.getElementById('achievements-modal')?.classList.remove('hidden');
+    } else if (current.id === 'btn-pause-leaderboard') {
+      this.renderLeaderboard();
+      document.getElementById('leaderboard-modal')?.classList.remove('hidden');
+    } else if (current.id === 'btn-pause-help') {
+      document.getElementById('help-modal')?.classList.remove('hidden');
+    }
+  }
+
   updateAudioButton(isMuted) {
     const muteBtn = document.getElementById('btn-mute');
     if (muteBtn) {
       muteBtn.textContent = isMuted ? '🔇 SOUND OFF' : '🔊 SOUND ON';
       muteBtn.classList.toggle('muted', isMuted);
+    }
+    const pauseMuteBtn = document.getElementById('btn-pause-mute');
+    if (pauseMuteBtn) {
+      pauseMuteBtn.textContent = isMuted ? '🔇 AUDIO: OFF' : '🔊 AUDIO: ON';
+      pauseMuteBtn.classList.toggle('active', !isMuted);
     }
   }
 
@@ -795,10 +1013,18 @@ class QixGame {
         window.ProgressionManager.syncDifficultyUI();
         window.ProgressionManager.syncThemeUI();
       }
+      this.syncPauseToggles();
       document.getElementById('pause-overlay').classList.remove('hidden');
+      this.setPauseFocus(0);
     } else if (this.state === 'PAUSED') {
+      this.closeAllModals();
       this.state = 'PLAYING';
       document.getElementById('pause-overlay').classList.add('hidden');
+      this.getPauseMenuItems().forEach(item => {
+        item.classList.remove('gamepad-focused');
+        const activeSub = item.querySelector ? item.querySelector('.gamepad-focused') : null;
+        if (activeSub) activeSub.classList.remove('gamepad-focused');
+      });
     }
   }
 
@@ -1892,13 +2118,21 @@ class QixGame {
     const btnStart = isBtnPressed(9);
     const btnSelect = isBtnPressed(8);
 
-    // Map to keysDown states for transparent integration
-    this.keysDown['ArrowUp'] = dpadUp;
-    this.keysDown['ArrowDown'] = dpadDown;
-    this.keysDown['ArrowLeft'] = dpadLeft;
-    this.keysDown['ArrowRight'] = dpadRight;
-    this.keysDown['Space'] = btnA;
-    this.keysDown['ShiftLeft'] = btnB;
+    // Map to keysDown states for transparent integration (merging gamepad with keyboard)
+    if (dpadUp) this.keysDown['ArrowUp'] = true;
+    if (dpadDown) this.keysDown['ArrowDown'] = true;
+    if (dpadLeft) this.keysDown['ArrowLeft'] = true;
+    if (dpadRight) this.keysDown['ArrowRight'] = true;
+    if (btnA) this.keysDown['Space'] = true;
+    if (btnB) this.keysDown['ShiftLeft'] = true;
+
+    // Handle open modals (Achievements, Leaderboard, Help)
+    if (this.isModalOpen()) {
+      if (justPressed(1) || justPressed(9)) {
+        this.closeAllModals();
+        return;
+      }
+    }
 
     // Handle Start button (Start new game / Pause / Resume / Advance level)
     if (justPressed(9)) {
@@ -1919,8 +2153,38 @@ class QixGame {
       }
     }
 
+    // Handle PAUSED state menu navigation via Gamepad D-pad & buttons
+    if (this.state === 'PAUSED' && !this.isModalOpen()) {
+      if (justPressed(12) || (axisY < -0.6 && !this.prevGamepadButtons['axisYUp'])) {
+        this.setPauseFocus(this.pauseFocusIndex - 1);
+      } else if (justPressed(13) || (axisY > 0.6 && !this.prevGamepadButtons['axisYDown'])) {
+        this.setPauseFocus(this.pauseFocusIndex + 1);
+      }
+
+      if (justPressed(14) || (axisX < -0.6 && !this.prevGamepadButtons['axisXLeft'])) {
+        this.handlePauseLeftRight(-1);
+      } else if (justPressed(15) || (axisX > 0.6 && !this.prevGamepadButtons['axisXRight'])) {
+        this.handlePauseLeftRight(1);
+      }
+
+      if (justPressed(0)) {
+        this.activatePauseFocusedItem();
+      } else if (justPressed(1)) {
+        this.togglePause();
+      }
+    }
+
     // Handle Title Screen & Game Over with A or Start
-    if (this.state === 'TITLE' || this.state === 'GAME_OVER') {
+    if (this.state === 'TITLE') {
+      if (justPressed(14) || (axisX < -0.6 && !this.prevGamepadButtons['axisXLeft'])) {
+        this.cycleTitleDifficulty(-1);
+      } else if (justPressed(15) || (axisX > 0.6 && !this.prevGamepadButtons['axisXRight'])) {
+        this.cycleTitleDifficulty(1);
+      }
+      if (justPressed(0)) {
+        this.startNewGame();
+      }
+    } else if (this.state === 'GAME_OVER') {
       if (justPressed(0)) {
         this.startNewGame();
       }
@@ -1976,12 +2240,13 @@ class QixGame {
         // B Button: Backtrack slot
         this.initialsIndex = Math.max(0, this.initialsIndex - 1);
       }
-
-      this.prevGamepadButtons['axisYUp'] = axisY < -0.6;
-      this.prevGamepadButtons['axisYDown'] = axisY > 0.6;
-      this.prevGamepadButtons['axisXLeft'] = axisX < -0.6;
-      this.prevGamepadButtons['axisXRight'] = axisX > 0.6;
     }
+
+    // Cache analog stick directional states for discrete menu navigation
+    this.prevGamepadButtons['axisYUp'] = axisY < -0.6;
+    this.prevGamepadButtons['axisYDown'] = axisY > 0.6;
+    this.prevGamepadButtons['axisXLeft'] = axisX < -0.6;
+    this.prevGamepadButtons['axisXRight'] = axisX > 0.6;
 
     // Cache current button states for next frame
     if (gp.buttons) {

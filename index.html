@@ -3,37 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>QIX - Classic 1981 Arcade Game</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
-
-  <!-- Top Header Navigation -->
-  <header class="app-header">
-    <div class="logo-container">
-      <h1 class="logo-title">QIX</h1>
-      <span class="logo-tag">1981 ARCADE</span>
-    </div>
-    <!-- Mobile Hamburger Toggle -->
-    <button id="btn-burger" class="burger-btn" aria-label="Toggle Menu" title="Menu">
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
-    <div class="header-actions" id="header-actions">
-      <button id="btn-lock-cabinet" class="btn-icon" style="border-color: #ff0077; color: #ff0077;" title="Lock Arcade Cabinet">🔒 LOCK</button>
-      <button id="btn-custom-image" class="btn-icon" title="Load Custom Image (JPG, JPEG, PNG)">🖼 ART</button>
-      <input type="file" id="image-file-input" accept=".jpg,.jpeg,.png,image/jpeg,image/png" style="display:none">
-      <button id="btn-achievements" class="btn-icon" style="border-color: #ffea00; color: #ffea00;" title="Achievements & Badges">🎖 BADGES</button>
-      <button id="btn-leaderboard" class="btn-icon" title="High Score Leaderboard">🏆 SCORES</button>
-      <button id="btn-fullscreen" class="btn-icon" title="Toggle Fullscreen">⛶ FULL</button>
-      <button id="btn-crt" class="btn-icon active" title="Toggle CRT Filter">📺 CRT</button>
-      <button id="btn-mute" class="btn-icon" title="Toggle Sound">🔊 AUDIO</button>
-      <button id="btn-pause" class="btn-icon" title="Pause Game">⏸ PAUSE</button>
-      <button id="btn-help" class="btn-icon" title="How to Play">❓ HELP</button>
-    </div>
-  </header>
-  <!-- Mobile Menu Backdrop -->
-  <div id="menu-backdrop" class="menu-backdrop hidden"></div>
 
   <!-- Arcade Security Clearance Lock Terminal -->
   <div id="security-lock-screen" class="security-terminal-overlay hidden">
@@ -183,24 +155,24 @@
           <button id="btn-start-game" class="arcade-btn-primary" style="margin-top: 14px;">PRESS (A) OR START</button>
         </div>
 
-        <!-- Enhanced Pause Menu Overlay -->
+        <!-- Enhanced R36S Console Pause & System Menu Overlay -->
         <div id="pause-overlay" class="overlay-screen pause-menu-screen hidden">
           <div class="pause-menu-card">
             <h2 class="overlay-title pause-title">PAUSED</h2>
-            <p class="pause-subtitle">TACTICAL SUSPENSION</p>
+            <p class="pause-subtitle">SYSTEM MENU</p>
 
             <div class="pause-actions-group">
-              <button id="btn-pause-resume" class="arcade-btn-primary" style="width: 100%;">▶ RESUME GAME</button>
-              <button id="btn-pause-restart" class="arcade-btn-secondary" style="width: 100%;">↺ RESTART ROUND</button>
+              <button id="btn-pause-resume" class="arcade-btn-primary menu-nav-item" style="width: 100%;">▶ RESUME GAME</button>
+              <button id="btn-pause-restart" class="arcade-btn-secondary menu-nav-item" style="width: 100%;">↺ RESTART ROUND</button>
             </div>
 
             <!-- Difficulty Switch in Pause Menu -->
             <div class="pause-settings-section">
               <div class="pause-section-title">DIFFICULTY PRESET</div>
               <div class="diff-buttons-group">
-                <button class="diff-select-btn" data-diff="beginner">BEGINNER</button>
-                <button class="diff-select-btn" data-diff="normal">ARCADE</button>
-                <button class="diff-select-btn" data-diff="master">MASTER</button>
+                <button class="diff-select-btn menu-nav-item" data-diff="beginner">BEGINNER</button>
+                <button class="diff-select-btn menu-nav-item" data-diff="normal">ARCADE</button>
+                <button class="diff-select-btn menu-nav-item" data-diff="master">MASTER</button>
               </div>
             </div>
 
@@ -208,15 +180,29 @@
             <div class="pause-settings-section">
               <div class="pause-section-title">CABINET THEME</div>
               <div class="theme-buttons-group">
-                <button class="theme-select-btn active" data-theme="classic">NEON</button>
-                <button class="theme-select-btn" data-theme="amber">AMBER</button>
-                <button class="theme-select-btn" data-theme="matrix">MATRIX</button>
+                <button class="theme-select-btn menu-nav-item active" data-theme="classic">NEON</button>
+                <button class="theme-select-btn menu-nav-item" data-theme="amber">AMBER</button>
+                <button class="theme-select-btn menu-nav-item" data-theme="matrix">MATRIX</button>
+              </div>
+            </div>
+
+            <!-- Display & Audio Quick Toggles -->
+            <div class="pause-settings-section">
+              <div class="pause-section-title">PREFERENCES</div>
+              <div class="pause-toggles-group">
+                <button id="btn-pause-crt" class="pause-toggle-btn menu-nav-item active">📺 CRT FILTER: ON</button>
+                <button id="btn-pause-mute" class="pause-toggle-btn menu-nav-item">🔊 AUDIO: ON</button>
               </div>
             </div>
 
             <div class="pause-footer-links">
-              <button id="btn-pause-achievements" class="pause-link-btn">🎖 ACHIEVEMENTS</button>
-              <button id="btn-pause-help" class="pause-link-btn">❓ HOW TO PLAY</button>
+              <button id="btn-pause-achievements" class="pause-link-btn menu-nav-item">🎖 BADGES</button>
+              <button id="btn-pause-leaderboard" class="pause-link-btn menu-nav-item">🏆 TOP 5</button>
+              <button id="btn-pause-help" class="pause-link-btn menu-nav-item">❓ HELP</button>
+            </div>
+
+            <div class="pause-nav-hint">
+              <span>▲/▼ D-PAD: SELECT</span> &bull; <span>(A): CHOOSE</span> &bull; <span>START / (B): RESUME</span>
             </div>
           </div>
         </div>
@@ -305,78 +291,6 @@
             <button id="btn-restart" class="arcade-btn-primary">PLAY AGAIN (A) / START</button>
             <button id="btn-view-board" class="arcade-btn-primary" style="background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.3);">🏆 TOP 5</button>
           </div>
-        </div>
-      </div>
-
-      <!-- Virtual Touch / Mouse Controller (Arcade Console Hardware Aesthetics) -->
-      <div class="controls-panel" aria-label="Game Controls">
-        <div class="panel-screw screw-tl"></div>
-        <div class="panel-screw screw-tr"></div>
-        <div class="panel-screw screw-bl"></div>
-        <div class="panel-screw screw-br"></div>
-
-        <!-- D-Pad Section with Recessed Radial Well -->
-        <div class="dpad-housing">
-          <div class="dpad-well">
-            <div class="virtual-dpad">
-              <button id="btn-up" class="dpad-btn dpad-up" aria-label="Move Up">
-                <svg viewBox="0 0 24 24" class="dpad-chevron" aria-hidden="true">
-                  <path d="M12 5L4 16h16z"/>
-                </svg>
-              </button>
-              <button id="btn-left" class="dpad-btn dpad-left" aria-label="Move Left">
-                <svg viewBox="0 0 24 24" class="dpad-chevron" aria-hidden="true">
-                  <path d="M5 12l11-8v16z"/>
-                </svg>
-              </button>
-              <div class="dpad-center" aria-hidden="true">
-                <div class="dpad-pivot"></div>
-              </div>
-              <button id="btn-right" class="dpad-btn dpad-right" aria-label="Move Right">
-                <svg viewBox="0 0 24 24" class="dpad-chevron" aria-hidden="true">
-                  <path d="M19 12l-11 8V4z"/>
-                </svg>
-              </button>
-              <button id="btn-down" class="dpad-btn dpad-down" aria-label="Move Down">
-                <svg viewBox="0 0 24 24" class="dpad-chevron" aria-hidden="true">
-                  <path d="M12 19l8-11H4z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Center Hardware Branding / Divider -->
-        <div class="controls-divider">
-          <span class="divider-line"></span>
-          <span class="hardware-label">
-            <span class="hw-dot"></span> TACTICAL FLIGHT DECK
-          </span>
-          <span class="divider-line"></span>
-        </div>
-
-        <!-- Action Buttons Section -->
-        <div class="virtual-actions">
-          <button id="btn-fast" class="action-btn btn-fast" aria-label="Fast Draw (Space or J)">
-            <div class="btn-top-row">
-              <span class="btn-led led-cyan"></span>
-              <span class="btn-title">FAST DRAW</span>
-            </div>
-            <div class="btn-bottom-row">
-              <span class="key-badge">SPACE / J</span>
-              <span class="mode-tag mode-standard">NORMAL PTS</span>
-            </div>
-          </button>
-          <button id="btn-slow" class="action-btn btn-slow" aria-label="Slow Draw (Shift or K for double points)">
-            <div class="btn-top-row">
-              <span class="btn-led led-orange"></span>
-              <span class="btn-title">SLOW DRAW</span>
-            </div>
-            <div class="btn-bottom-row">
-              <span class="key-badge">SHIFT / K</span>
-              <span class="mode-tag mode-bonus">⚡ 2X+ PTS</span>
-            </div>
-          </button>
         </div>
       </div>
 
@@ -524,14 +438,14 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/security.js?v=5"></script>
-  <script src="js/audio.js?v=5"></script>
-  <script src="js/grid.js?v=5"></script>
-  <script src="js/qix.js?v=5"></script>
-  <script src="js/sparx.js?v=5"></script>
-  <script src="js/player.js?v=5"></script>
-  <script src="js/progression.js?v=5"></script>
-  <script src="js/game.js?v=5"></script>
+  <script src="js/security.js?v=6"></script>
+  <script src="js/audio.js?v=6"></script>
+  <script src="js/grid.js?v=6"></script>
+  <script src="js/qix.js?v=6"></script>
+  <script src="js/sparx.js?v=6"></script>
+  <script src="js/player.js?v=6"></script>
+  <script src="js/progression.js?v=6"></script>
+  <script src="js/game.js?v=6"></script>
 
   <script>
     // Arcade Security Clearance Terminal Controller
