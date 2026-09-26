@@ -1,0 +1,7 @@
+# Prevent robots and search engines from indexing the site and images
+<IfModule mod_headers.c>
+    Header set X-Robots-Tag "noindex, nofollow, noimageindex, noarchive, nosnippet"
+    <FilesMatch "\.(jpe?g|png|gif|webp|svg)$">
+        Header set X-Robots-Tag "noindex, noimageindex, noarchive"
+    </FilesMatch>
+</IfModule>

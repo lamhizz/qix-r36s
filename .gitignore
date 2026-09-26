@@ -1,0 +1,9 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Custom Level Background Artworks (exclude images to keep repo lightweight, keep auto-discovery scripts)
+level-images/*
+!level-images/index.php
+!level-images/.htaccess
+!level-images/manifest.json
