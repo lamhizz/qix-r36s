@@ -2,6 +2,20 @@
 local Sparx = {}
 Sparx.__index = Sparx
 
+local DIRS = {
+    [0] = { dx = 1, dy = 0 },  -- 0: Right
+    [1] = { dx = 0, dy = 1 },  -- 1: Down
+    [2] = { dx = -1, dy = 0 }, -- 2: Left
+    [3] = { dx = 0, dy = -1 }  -- 3: Up
+}
+
+local TURN_CW = { -1, 0, 1, 2 }
+local TURN_CCW = { 1, 0, -1, 2 }
+
+local STAR_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+local STAR_POLYGON_OUTER = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+local STAR_POLYGON_CROSS = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+
 function Sparx.new(grid, x, y, isClockwise, isSuper)
     local self = setmetatable({}, Sparx)
     self.grid = grid
@@ -26,7 +40,7 @@ end
 function Sparx:update(dt, player)
     self.sparkAngle = self.sparkAngle + dt * 10
 
-    local stepsPerSec = self.isSuper and 95 or 65
+    local stepsPerSec = self.isSuper and 75 or 54
     self.stepAccumulator = self.stepAccumulator + stepsPerSec * dt
 
     while self.stepAccumulator >= 1.0 do
@@ -36,12 +50,13 @@ function Sparx:update(dt, player)
 end
 
 function Sparx:step(player)
-    -- Super Sparx chasing player onto active stix
+    -- 1. Super Sparx chasing player onto active stix
     if self.isSuper and player and player:isDrawing() and #player.stixPath > 0 then
         if not self.chasingStix then
             local origin = player.stixPath[1]
-            local dist = math.sqrt((self.x - origin.x)^2 + (self.y - origin.y)^2)
-            if dist <= 2.0 then
+            local dx = self.x - origin.x
+            local dy = self.y - origin.y
+            if (dx * dx + dy * dy) <= 6.25 then
                 self.chasingStix = true
                 self.stixIndex = 1
             end
@@ -60,21 +75,62 @@ function Sparx:step(player)
         self.chasingStix = false
     end
 
-    -- Normal border following
-    local dirs = {
-        { dx = 1, dy = 0 },  -- 0: Right
-        { dx = 0, dy = 1 },  -- 1: Down
-        { dx = -1, dy = 0 }, -- 2: Left
-        { dx = 0, dy = -1 }  -- 3: Up
-    }
+    -- 2. Movement along borders:
+    -- Super Sparx: Actively pursues the Marker along outer borders and newly claimed inner boundaries!
+    if self.isSuper and player then
+        local targetX = player.x
+        local targetY = player.y
+        -- If player is drawing into the field, target the Stix entrance
+        if player:isDrawing() and #player.stixPath > 0 then
+            targetX = player.stixPath[1].x
+            targetY = player.stixPath[1].y
+        end
 
-    -- Wall follower algorithm
-    local turnOrder = self.isClockwise and { -1, 0, 1, 2 } or { 1, 0, -1, 2 }
+        local bestDir = nil
+        local bestDist = 1e9
+        local reverseDir = (self.dir + 2) % 4
+        local reverseValid = false
 
-    for _, t in ipairs(turnOrder) do
-        local testDir = (self.dir + t) % 4
-        local nx = self.x + dirs[testDir + 1].dx
-        local ny = self.y + dirs[testDir + 1].dy
+        for i = 0, 3 do
+            local d = DIRS[i]
+            local nx = self.x + d.dx
+            local ny = self.y + d.dy
+
+            if self.grid:inBounds(nx, ny) and self.grid:isActiveBorder(nx, ny) then
+                if i == reverseDir then
+                    reverseValid = true
+                else
+                    local dist = (nx - targetX) * (nx - targetX) + (ny - targetY) * (ny - targetY)
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestDir = i
+                    end
+                end
+            end
+        end
+
+        -- If trapped at a dead end, allow reversing
+        if not bestDir and reverseValid then
+            bestDir = reverseDir
+        end
+
+        if bestDir then
+            local d = DIRS[bestDir]
+            self.x = self.x + d.dx
+            self.y = self.y + d.dy
+            self.dir = bestDir
+            return
+        end
+    end
+
+    -- Normal Sparx: Fixed perimeter patrol (wall follower along outer borders and edges of claimed areas)
+    local turnOrder = self.isClockwise and TURN_CW or TURN_CCW
+
+    for i = 1, 4 do
+        local testDir = (self.dir + turnOrder[i]) % 4
+        local d = DIRS[testDir]
+        local nx = self.x + d.dx
+        local ny = self.y + d.dy
 
         if self.grid:inBounds(nx, ny) and self.grid:isActiveBorder(nx, ny) then
             self.x = nx
@@ -89,39 +145,109 @@ function Sparx:checkPlayerCollision(player)
     if not player or player:isShielded() or player.state == player.STATE_DEAD then
         return false
     end
-    local dist = math.sqrt((self.x - player.x)^2 + (self.y - player.y)^2)
-    return dist < 1.5
+    local dx = self.x - player.x
+    local dy = self.y - player.y
+    return (dx * dx + dy * dy) < 4.0
 end
 
 function Sparx:draw(offsetX, offsetY, scaleX, scaleY)
     local sx = offsetX + self.x * scaleX
     local sy = offsetY + self.y * scaleY
-    local size = (self.isSuper and 5 or 4) * scaleX
 
-    local r, g, b = 1, 0.2, 0.1
-    if self.isSuper then
-        r, g, b = 0.2, 0.5, 1.0
-    end
-    love.graphics.setColor(r, g, b, 1)
+    -- Significantly increased element size for high visibility on handheld screen
+    local baseSize = self.isSuper and 5.4 or 4.4
+    local size = baseSize * scaleX
 
-    -- Draw rotating 4-pointed spark star
     love.graphics.push()
     love.graphics.translate(sx, sy)
-    love.graphics.rotate(self.sparkAngle)
 
-    local star = {
-        0, -size * 1.5,
-        size * 0.4, -size * 0.4,
-        size * 1.5, 0,
-        size * 0.4, size * 0.4,
-        0, size * 1.5,
-        -size * 0.4, size * 0.4,
-        -size * 1.5, 0,
-        -size * 0.4, -size * 0.4
-    }
-    love.graphics.polygon("fill", star)
-    love.graphics.setColor(1, 1, 1, 0.9)
-    love.graphics.circle("fill", 0, 0, size * 0.4)
+    -- 1. Outer High-Contrast Dark Silhouette (Ensures visibility against cyan borders & bright photos)
+    love.graphics.setColor(0, 0, 0, 0.88)
+    love.graphics.circle("fill", 0, 0, size * 1.35)
+
+    -- 2. Ambient Corona / Glowing Halo
+    local pulse = 0.75 + 0.25 * math.sin(self.sparkAngle * 2)
+    if self.isSuper then
+        -- Super Sparx: Menacing pulsing magenta/red halo
+        love.graphics.setColor(1.0, 0.15, 0.45, 0.55 * pulse)
+        love.graphics.circle("fill", 0, 0, size * 1.7)
+    else
+        -- Normal Sparx: Electric golden yellow halo
+        love.graphics.setColor(1.0, 0.75, 0.0, 0.42 * pulse)
+        love.graphics.circle("fill", 0, 0, size * 1.55)
+    end
+
+    -- 3. Secondary 45-degree Cross Star (creates authentic 8-point dazzling arcade sparkler)
+    local sCross = size * 0.95
+    local tipCross = sCross * 1.4
+    local waistCross = sCross * 0.35
+
+    love.graphics.rotate(self.sparkAngle + 0.785398) -- +45 degrees
+
+    STAR_POLYGON_CROSS[1]  = 0;            STAR_POLYGON_CROSS[2]  = -tipCross
+    STAR_POLYGON_CROSS[3]  = waistCross;   STAR_POLYGON_CROSS[4]  = -waistCross
+    STAR_POLYGON_CROSS[5]  = tipCross;     STAR_POLYGON_CROSS[6]  = 0
+    STAR_POLYGON_CROSS[7]  = waistCross;   STAR_POLYGON_CROSS[8]  = waistCross
+    STAR_POLYGON_CROSS[9]  = 0;            STAR_POLYGON_CROSS[10] = tipCross
+    STAR_POLYGON_CROSS[11] = -waistCross;  STAR_POLYGON_CROSS[12] = waistCross
+    STAR_POLYGON_CROSS[13] = -tipCross;    STAR_POLYGON_CROSS[14] = 0
+    STAR_POLYGON_CROSS[15] = -waistCross;  STAR_POLYGON_CROSS[16] = -waistCross
+
+    if self.isSuper then
+        love.graphics.setColor(1.0, 0.2, 0.8, 0.9)
+    else
+        love.graphics.setColor(1.0, 0.45, 0.05, 0.95)
+    end
+    love.graphics.polygon("fill", STAR_POLYGON_CROSS)
+
+    -- 4. Primary Rotating 4-Point Star
+    love.graphics.rotate(-0.785398) -- Return to sparkAngle
+    local tipMain = size * 1.65
+    local waistMain = size * 0.42
+
+    -- Black outline on primary star for punchy contrast
+    local shadowTip = tipMain + 1.8
+    local shadowWaist = waistMain + 1.2
+    STAR_POLYGON_OUTER[1]  = 0;             STAR_POLYGON_OUTER[2]  = -shadowTip
+    STAR_POLYGON_OUTER[3]  = shadowWaist;   STAR_POLYGON_OUTER[4]  = -shadowWaist
+    STAR_POLYGON_OUTER[5]  = shadowTip;     STAR_POLYGON_OUTER[6]  = 0
+    STAR_POLYGON_OUTER[7]  = shadowWaist;   STAR_POLYGON_OUTER[8]  = shadowWaist
+    STAR_POLYGON_OUTER[9]  = 0;             STAR_POLYGON_OUTER[10] = shadowTip
+    STAR_POLYGON_OUTER[11] = -shadowWaist;  STAR_POLYGON_OUTER[12] = shadowWaist
+    STAR_POLYGON_OUTER[13] = -shadowTip;    STAR_POLYGON_OUTER[14] = 0
+    STAR_POLYGON_OUTER[15] = -shadowWaist;  STAR_POLYGON_OUTER[16] = -shadowWaist
+
+    love.graphics.setColor(0, 0, 0, 0.95)
+    love.graphics.polygon("fill", STAR_POLYGON_OUTER)
+
+    -- Vibrant core star
+    STAR_POLYGON[1]  = 0;           STAR_POLYGON[2]  = -tipMain
+    STAR_POLYGON[3]  = waistMain;   STAR_POLYGON[4]  = -waistMain
+    STAR_POLYGON[5]  = tipMain;     STAR_POLYGON[6]  = 0
+    STAR_POLYGON[7]  = waistMain;   STAR_POLYGON[8]  = waistMain
+    STAR_POLYGON[9]  = 0;           STAR_POLYGON[10] = tipMain
+    STAR_POLYGON[11] = -waistMain;  STAR_POLYGON[12] = waistMain
+    STAR_POLYGON[13] = -tipMain;    STAR_POLYGON[14] = 0
+    STAR_POLYGON[15] = -waistMain;  STAR_POLYGON[16] = -waistMain
+
+    if self.isSuper then
+        -- Flashing electric cyan / bright magenta beacon
+        local flash = math.floor(self.sparkAngle * 3) % 2
+        if flash == 0 then
+            love.graphics.setColor(0.1, 0.95, 1.0, 1.0)
+        else
+            love.graphics.setColor(1.0, 0.15, 0.7, 1.0)
+        end
+    else
+        -- Intense electric golden yellow
+        love.graphics.setColor(1.0, 0.95, 0.15, 1.0)
+    end
+    love.graphics.polygon("fill", STAR_POLYGON)
+
+    -- 5. Brilliant Hot White Center Spark
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.circle("fill", 0, 0, size * 0.42)
+
     love.graphics.pop()
 end
 

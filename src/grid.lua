@@ -20,8 +20,8 @@ Grid.CELL_STIX = CELL_STIX
 
 function Grid.new(width, height)
     local self = setmetatable({}, Grid)
-    self.width = width or 320
-    self.height = height or 226
+    self.width = width or 355
+    self.height = height or 251
     self.size = self.width * self.height
     self.totalInner = (self.width - 2) * (self.height - 2)
     self.claimedCount = 0
@@ -31,12 +31,16 @@ function Grid.new(width, height)
     self.image = nil
     self.bgImage = nil
 
+    self.bfsVisited = {}
+    self.bfsTag = 0
+    self.bfsQueue = {}
+
     self:init()
     return self
 end
 
 function Grid:loadBackground(imagePath)
-    if love.filesystem.getInfo(imagePath) then
+    if imagePath and love.filesystem.getInfo(imagePath) then
         local success, img = pcall(love.graphics.newImage, imagePath)
         if success then
             self.bgImage = img
@@ -105,15 +109,22 @@ function Grid:isEmpty(x, y)
     return self.cells[y * self.width + x] == CELL_EMPTY
 end
 
+local BORDER_NEIGHBORS = {
+    {0, 1}, {0, -1}, {1, 0}, {-1, 0},
+    {1, 1}, {-1, -1}, {1, -1}, {-1, 1}
+}
+
 function Grid:isActiveBorder(x, y)
     if not self:isBorder(x, y) then return false end
     if x == 0 or x == self.width - 1 or y == 0 or y == self.height - 1 then return true end
 
-    local dirs = { {0,1}, {0,-1}, {1,0}, {-1,0}, {1,1}, {-1,-1}, {1,-1}, {-1,1} }
-    for _, d in ipairs(dirs) do
+    local w = self.width
+    local cells = self.cells
+    for i = 1, 8 do
+        local d = BORDER_NEIGHBORS[i]
         local nx = x + d[1]
         local ny = y + d[2]
-        if self:inBounds(nx, ny) and self.cells[ny * self.width + nx] == CELL_EMPTY then
+        if nx >= 0 and nx < w and ny >= 0 and ny < self.height and cells[ny * w + nx] == CELL_EMPTY then
             return true
         end
     end
@@ -123,7 +134,11 @@ end
 function Grid:findNearestEmpty(targetX, targetY)
     local tx = math.floor(targetX)
     local ty = math.floor(targetY)
-    if self:isEmpty(tx, ty) then return { x = tx, y = ty } end
+    if self:isEmpty(tx, ty) then return tx, ty end
+
+    local w = self.width
+    local h = self.height
+    local cells = self.cells
 
     for r = 1, 15 do
         for dy = -r, r do
@@ -131,14 +146,14 @@ function Grid:findNearestEmpty(targetX, targetY)
                 if math.abs(dx) == r or math.abs(dy) == r then
                     local nx = tx + dx
                     local ny = ty + dy
-                    if self:isEmpty(nx, ny) then
-                        return { x = nx, y = ny }
+                    if nx >= 0 and nx < w and ny >= 0 and ny < h and cells[ny * w + nx] == CELL_EMPTY then
+                        return nx, ny
                     end
                 end
             end
         end
     end
-    return nil
+    return nil, nil
 end
 
 function Grid:getClaimedPercent()
@@ -147,73 +162,192 @@ function Grid:getClaimedPercent()
 end
 
 function Grid:completeStix(stixPath, isSlow, qixList)
-    -- 1. Commit stix path to BORDER
-    for _, pt in ipairs(stixPath) do
-        self.cells[pt.y * self.width + pt.x] = CELL_BORDER
-    end
-
-    local claimType = isSlow and CELL_CLAIMED_SLOW or CELL_CLAIMED_FAST
     local w = self.width
     local h = self.height
+    local cells = self.cells
+    local claimType = isSlow and CELL_CLAIMED_SLOW or CELL_CLAIMED_FAST
 
-    -- 2. Flood fill from all Qix positions to find empty cells Qix can reach
-    local visited = {}
-    local queue = {}
-    local qHead = 1
+    -- 1. Commit stix path to BORDER and update dirty pixels
+    for _, pt in ipairs(stixPath) do
+        cells[pt.y * w + pt.x] = CELL_BORDER
+        self:updatePixel(pt.x, pt.y, CELL_BORDER)
+    end
 
-    for _, qix in ipairs(qixList) do
-        local pos = self:findNearestEmpty(qix.p1.x, qix.p1.y)
-        if pos then
-            local qIdx = pos.y * w + pos.x
-            if not visited[qIdx] then
-                visited[qIdx] = true
-                table.insert(queue, qIdx)
+    local visited = self.bfsVisited
+    local queue = self.bfsQueue
+
+    -- 2. Check for Classic 1981 Split-Qix Rule (Level 3+ with 2 independent Qixes)
+    local isSplitQix = false
+    local qix1Reachable = 0
+    local tagQ1 = nil
+
+    if #qixList >= 2 then
+        local q1x, q1y = self:findNearestEmpty(qixList[1].p1.x, qixList[1].p1.y)
+        local q2x, q2y = self:findNearestEmpty(qixList[2].p1.x, qixList[2].p1.y)
+
+        if q1x and q2x then
+            self.bfsTag = (self.bfsTag or 0) + 1
+            tagQ1 = self.bfsTag
+            local q1Head = 1
+            local q1Tail = 1
+            local qIdx1 = q1y * w + q1x
+            visited[qIdx1] = tagQ1
+            queue[1] = qIdx1
+
+            while q1Head <= q1Tail do
+                local curr = queue[q1Head]
+                q1Head = q1Head + 1
+                local cx = curr % w
+                local cy = math.floor(curr / w)
+
+                if cx + 1 < w then
+                    local nIdx = curr + 1
+                    if visited[nIdx] ~= tagQ1 and cells[nIdx] == CELL_EMPTY then
+                        visited[nIdx] = tagQ1
+                        q1Tail = q1Tail + 1
+                        queue[q1Tail] = nIdx
+                    end
+                end
+                if cx > 0 then
+                    local nIdx = curr - 1
+                    if visited[nIdx] ~= tagQ1 and cells[nIdx] == CELL_EMPTY then
+                        visited[nIdx] = tagQ1
+                        q1Tail = q1Tail + 1
+                        queue[q1Tail] = nIdx
+                    end
+                end
+                if cy + 1 < h then
+                    local nIdx = curr + w
+                    if visited[nIdx] ~= tagQ1 and cells[nIdx] == CELL_EMPTY then
+                        visited[nIdx] = tagQ1
+                        q1Tail = q1Tail + 1
+                        queue[q1Tail] = nIdx
+                    end
+                end
+                if cy > 0 then
+                    local nIdx = curr - w
+                    if visited[nIdx] ~= tagQ1 and cells[nIdx] == CELL_EMPTY then
+                        visited[nIdx] = tagQ1
+                        q1Tail = q1Tail + 1
+                        queue[q1Tail] = nIdx
+                    end
+                end
             end
-        end
-        local pos2 = self:findNearestEmpty(qix.p2.x, qix.p2.y)
-        if pos2 then
-            local qIdx2 = pos2.y * w + pos2.x
-            if not visited[qIdx2] then
-                visited[qIdx2] = true
-                table.insert(queue, qIdx2)
+
+            local qIdx2 = q2y * w + q2x
+            if visited[qIdx2] ~= tagQ1 then
+                -- Qix 2 was NOT reached from Qix 1: Split-Qix occurred!
+                isSplitQix = true
+                qix1Reachable = q1Tail
             end
         end
     end
 
-    while qHead <= #queue do
-        local curr = queue[qHead]
-        qHead = qHead + 1
-
-        local cx = curr % w
-        local cy = math.floor(curr / w)
-
-        local n1 = (cx + 1 < w) and (curr + 1) or nil
-        local n2 = (cx - 1 >= 0) and (curr - 1) or nil
-        local n3 = (cy + 1 < h) and (curr + w) or nil
-        local n4 = (cy - 1 >= 0) and (curr - w) or nil
-
-        local neighbors = { n1, n2, n3, n4 }
-        for _, nIdx in ipairs(neighbors) do
-            if nIdx and not visited[nIdx] and self.cells[nIdx] == CELL_EMPTY then
-                visited[nIdx] = true
-                table.insert(queue, nIdx)
-            end
-        end
-    end
-
-    -- 3. Any EMPTY cell NOT reached by Qix is captured!
     local newlyCaptured = 0
     local sumX, sumY = 0, 0
 
-    for y = 1, h - 2 do
-        local rowOffset = y * w
-        for x = 1, w - 2 do
-            local idx = rowOffset + x
-            if self.cells[idx] == CELL_EMPTY and not visited[idx] then
-                self.cells[idx] = claimType
-                newlyCaptured = newlyCaptured + 1
-                sumX = sumX + x
-                sumY = sumY + y
+    if isSplitQix then
+        -- In Split-Qix: The smaller compartment is claimed, and round immediately clears!
+        local remainingEmpty = self.totalInner - self.claimedCount
+        local claimSide1 = (qix1Reachable <= remainingEmpty * 0.5)
+
+        for y = 1, h - 2 do
+            local rowOffset = y * w
+            for x = 1, w - 2 do
+                local idx = rowOffset + x
+                if cells[idx] == CELL_EMPTY then
+                    local inSide1 = (visited[idx] == tagQ1)
+                    if (claimSide1 and inSide1) or (not claimSide1 and not inSide1) then
+                        cells[idx] = claimType
+                        self:updatePixel(x, y, claimType)
+                        newlyCaptured = newlyCaptured + 1
+                        sumX = sumX + x
+                        sumY = sumY + y
+                    end
+                end
+            end
+        end
+    else
+        -- Standard flood fill from all Qix positions
+        self.bfsTag = (self.bfsTag or 0) + 1
+        local tag = self.bfsTag
+        local qHead = 1
+        local qTail = 0
+
+        for _, qix in ipairs(qixList) do
+            local qx1, qy1 = self:findNearestEmpty(qix.p1.x, qix.p1.y)
+            if qx1 then
+                local qIdx = qy1 * w + qx1
+                if visited[qIdx] ~= tag then
+                    visited[qIdx] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = qIdx
+                end
+            end
+            local qx2, qy2 = self:findNearestEmpty(qix.p2.x, qix.p2.y)
+            if qx2 then
+                local qIdx2 = qy2 * w + qx2
+                if visited[qIdx2] ~= tag then
+                    visited[qIdx2] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = qIdx2
+                end
+            end
+        end
+
+        while qHead <= qTail do
+            local curr = queue[qHead]
+            qHead = qHead + 1
+
+            local cx = curr % w
+            local cy = math.floor(curr / w)
+
+            if cx + 1 < w then
+                local nIdx = curr + 1
+                if visited[nIdx] ~= tag and cells[nIdx] == CELL_EMPTY then
+                    visited[nIdx] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = nIdx
+                end
+            end
+            if cx > 0 then
+                local nIdx = curr - 1
+                if visited[nIdx] ~= tag and cells[nIdx] == CELL_EMPTY then
+                    visited[nIdx] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = nIdx
+                end
+            end
+            if cy + 1 < h then
+                local nIdx = curr + w
+                if visited[nIdx] ~= tag and cells[nIdx] == CELL_EMPTY then
+                    visited[nIdx] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = nIdx
+                end
+            end
+            if cy > 0 then
+                local nIdx = curr - w
+                if visited[nIdx] ~= tag and cells[nIdx] == CELL_EMPTY then
+                    visited[nIdx] = tag
+                    qTail = qTail + 1
+                    queue[qTail] = nIdx
+                end
+            end
+        end
+
+        -- Capture any EMPTY cell NOT reached by Qix
+        for y = 1, h - 2 do
+            local rowOffset = y * w
+            for x = 1, w - 2 do
+                local idx = rowOffset + x
+                if cells[idx] == CELL_EMPTY and visited[idx] ~= tag then
+                    cells[idx] = claimType
+                    self:updatePixel(x, y, claimType)
+                    newlyCaptured = newlyCaptured + 1
+                    sumX = sumX + x
+                    sumY = sumY + y
+                end
             end
         end
     end
@@ -222,7 +356,13 @@ function Grid:completeStix(stixPath, isSlow, qixList)
     local centroidY = newlyCaptured > 0 and (sumY / newlyCaptured) or (h * 0.5)
 
     self.claimedCount = self.claimedCount + newlyCaptured
-    self:updateAllPixels()
+
+    if self.image then
+        self.image:replacePixels(self.imageData)
+    else
+        self.image = love.graphics.newImage(self.imageData)
+        self.image:setFilter("nearest", "nearest")
+    end
 
     return {
         capturedCells = newlyCaptured,
@@ -230,7 +370,8 @@ function Grid:completeStix(stixPath, isSlow, qixList)
         cutPercent = (newlyCaptured / self.totalInner) * 100,
         isSlow = isSlow,
         cx = centroidX,
-        cy = centroidY
+        cy = centroidY,
+        isSplitQix = isSplitQix
     }
 end
 

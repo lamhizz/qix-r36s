@@ -64,8 +64,24 @@ end
 
 function Audio.init()
     sounds.tick = makeTone(650, 0.015, "square", true)
+    sounds.start = makeTone(440, 0.20, "triangle", true)
     sounds.capture = makeTone(523, 0.25, "square", true)
     sounds.bonus = makeTone(880, 0.40, "triangle", true)
+
+    -- Rising 8-bit victory arpeggio fanfare (C5 -> E5 -> G5 -> C6)
+    local fanfareSamples = math.floor(sampleRate * 0.65)
+    local fanfareData = love.sound.newSoundData(fanfareSamples, sampleRate, 16, 1)
+    local notes = { 523.25, 659.25, 783.99, 1046.50 }
+    for i = 0, fanfareSamples - 1 do
+        local t = i / sampleRate
+        local noteIdx = math.min(#notes, math.floor(t / 0.15) + 1)
+        local freq = notes[noteIdx]
+        local subT = (t % 0.15) / 0.15
+        local env = 1.0 - subT
+        local sample = math.sin(2 * math.pi * freq * t) * 0.28 * (env * env)
+        fanfareData:setSample(i, sample)
+    end
+    sounds.fanfare = love.audio.newSource(fanfareData, "static")
 
     -- Death explosion sound
     local deathSamples = math.floor(sampleRate * 0.6)

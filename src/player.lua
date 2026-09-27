@@ -1,5 +1,6 @@
 -- Player marker and stix drawing engine for Qix
 local Audio = require("audio")
+local Particles = require("particles")
 
 local Player = {}
 Player.__index = Player
@@ -32,9 +33,9 @@ function Player:reset()
     self.fuseWarning = false
     self.fuseActive = false
     self.fuseIndex = 1
-    self.fuseWarningDelay = 0.6
-    self.fuseDelay = 1.0
-    self.fuseBurnSpeed = 50
+    self.fuseWarningDelay = 0.4
+    self.fuseDelay = 0.75
+    self.fuseBurnSpeed = 42
 
     self.shieldDuration = 2.5
     self.shieldTimer = self.shieldDuration -- Grace period on level start
@@ -84,7 +85,7 @@ function Player:isDrawing()
     return self.state == STATE_DRAWING
 end
 
-function Player:update(dt, input, qixList, onAreaCaptured, onDeath)
+function Player:update(dt, input, qixList, onAreaCaptured, onDeath, offsetX, offsetY, scaleX, scaleY)
     if self.state == STATE_DEAD then return end
 
     self.animTime = self.animTime + dt
@@ -97,9 +98,9 @@ function Player:update(dt, input, qixList, onAreaCaptured, onDeath)
 
     local speed = 0
     if self.state == STATE_BORDER then
-        speed = 180 -- Fast border traversal
+        speed = 160 -- Border traversal pacing
     else
-        speed = self.isSlow and 55 or 110 -- Slow draw vs Fast draw
+        speed = self.isSlow and 48 or 95 -- Slow draw vs Fast draw
     end
 
     if hasMove then
@@ -114,6 +115,11 @@ function Player:update(dt, input, qixList, onAreaCaptured, onDeath)
         while self.moveAccumulator >= 1.0 do
             self.moveAccumulator = self.moveAccumulator - 1.0
             local result = self:step(input.dx, input.dy, wantsDraw, input.slowDraw, qixList)
+
+            -- Plasma cutting spark emitter
+            if self.state == STATE_DRAWING and offsetX and scaleX then
+                Particles.spawnCutSpark(offsetX + self.x * scaleX, offsetY + self.y * scaleY, input.dx, input.dy, self.isSlow)
+            end
 
             if result and result.captured then
                 onAreaCaptured(result.captureResult)
@@ -234,36 +240,95 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
     return nil
 end
 
+local stixLineCoords = {}
+local DIAMOND_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0 }
+
 function Player:draw(offsetX, offsetY, scaleX, scaleY)
     if self.state == STATE_DEAD then return end
 
-    -- Draw active Stix line
-    if self.state == STATE_DRAWING and #self.stixPath > 1 then
-        local r, g, b = 0, 0.9, 1
-        if self.isSlow then r, g, b = 1, 0.25, 0.1 end
-        love.graphics.setColor(r, g, b, 1)
-        love.graphics.setLineWidth(2 * scaleX)
+    -- Draw active Stix line (single batched draw call)
+    local pathCount = #self.stixPath
+    if self.state == STATE_DRAWING and pathCount > 1 then
+        local fIdx = (self.fuseActive and pathCount > 0) and math.min(pathCount, math.floor(self.fuseIndex)) or 0
 
-        for i = 1, #self.stixPath - 1 do
-            local p1 = self.stixPath[i]
-            local p2 = self.stixPath[i + 1]
-            love.graphics.line(
-                offsetX + p1.x * scaleX, offsetY + p1.y * scaleY,
-                offsetX + p2.x * scaleX, offsetY + p2.y * scaleY
-            )
+        -- 1. If fuse is burning, draw the burnt/charred trail from origin up to fuse head
+        if fIdx > 1 then
+            love.graphics.setColor(0.5, 0.15, 0.08, 0.8)
+            love.graphics.setLineWidth(1.6 * scaleX)
+            local burntIdx = 0
+            for i = 1, fIdx do
+                local pt = self.stixPath[i]
+                burntIdx = burntIdx + 1
+                stixLineCoords[burntIdx] = offsetX + pt.x * scaleX
+                burntIdx = burntIdx + 1
+                stixLineCoords[burntIdx] = offsetY + pt.y * scaleY
+            end
+            for i = burntIdx + 1, #stixLineCoords do stixLineCoords[i] = nil end
+            if burntIdx >= 4 then
+                love.graphics.line(stixLineCoords)
+            end
         end
 
-        -- Draw fuse burning spark if fuse is active
-        if self.fuseActive and #self.stixPath > 0 then
-            local fIdx = math.min(#self.stixPath, math.floor(self.fuseIndex))
+        -- 2. Draw remaining intact Stix line from fuse head (or origin) to Marker
+        local startPtIdx = math.max(1, fIdx)
+        if startPtIdx < pathCount then
+            local r, g, b = 0, 0.9, 1
+            if self.isSlow then r, g, b = 1, 0.25, 0.1 end
+            love.graphics.setColor(r, g, b, 1)
+            love.graphics.setLineWidth(1.8 * scaleX)
+
+            local intactIdx = 0
+            for i = startPtIdx, pathCount do
+                local pt = self.stixPath[i]
+                intactIdx = intactIdx + 1
+                stixLineCoords[intactIdx] = offsetX + pt.x * scaleX
+                intactIdx = intactIdx + 1
+                stixLineCoords[intactIdx] = offsetY + pt.y * scaleY
+            end
+            for i = intactIdx + 1, #stixLineCoords do stixLineCoords[i] = nil end
+            if intactIdx >= 4 then
+                love.graphics.line(stixLineCoords)
+            end
+        end
+
+        -- 3. Fuse Warning Ember (hesitation warning at Stix origin)
+        if self.fuseWarning and pathCount > 0 and not self.fuseActive then
+            local oPt = self.stixPath[1]
+            local ox = offsetX + oPt.x * scaleX
+            local oy = offsetY + oPt.y * scaleY
+            local pulse = 0.5 + 0.5 * math.sin(self.animTime * 25)
+            love.graphics.setColor(1.0, 0.35, 0.0, 0.7 * pulse)
+            love.graphics.circle("fill", ox, oy, 4.0 * scaleX)
+            love.graphics.setColor(1.0, 0.9, 0.2, 0.95 * pulse)
+            love.graphics.circle("fill", ox, oy, 2.0 * scaleX)
+        end
+
+        -- 4. Active Sizzling Fuse Flame traveling down the Stix
+        if self.fuseActive and fIdx > 0 then
             local fPt = self.stixPath[fIdx]
             if fPt then
                 local fx = offsetX + fPt.x * scaleX
                 local fy = offsetY + fPt.y * scaleY
-                love.graphics.setColor(1, 0.8, 0.1, 1)
-                love.graphics.circle("fill", fx, fy, 4 * scaleX)
-                love.graphics.setColor(1, 0.3, 0.1, 0.8)
-                love.graphics.circle("line", fx, fy, 7 * scaleX)
+                local flicker = math.sin(self.animTime * 35)
+
+                -- Outer heat aura
+                love.graphics.setColor(1.0, 0.15, 0.0, 0.45 + 0.25 * flicker)
+                love.graphics.circle("fill", fx, fy, (5.2 + flicker) * scaleX)
+
+                -- Sizzling flame body
+                love.graphics.setColor(1.0, 0.65, 0.1, 0.95)
+                love.graphics.circle("fill", fx, fy, (3.4 + 0.5 * flicker) * scaleX)
+
+                -- Intense white-hot core
+                love.graphics.setColor(1.0, 1.0, 0.85, 1.0)
+                love.graphics.circle("fill", fx, fy, 1.8 * scaleX)
+
+                -- Radiating flying spark embers
+                local spkOff1 = math.cos(self.animTime * 28) * 4.5 * scaleX
+                local spkOff2 = math.sin(self.animTime * 32) * 4.5 * scaleX
+                love.graphics.setColor(1.0, 0.9, 0.2, 0.85)
+                love.graphics.circle("fill", fx + spkOff1, fy + spkOff2, 1.2 * scaleX)
+                love.graphics.circle("fill", fx - spkOff2, fy + spkOff1, 1.0 * scaleX)
             end
         end
     end
@@ -271,7 +336,7 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
     -- Draw player marker (diamond)
     local px = offsetX + self.x * scaleX
     local py = offsetY + self.y * scaleY
-    local size = 5 * scaleX
+    local size = 3.3 * scaleX
 
     -- Respawn shield flashing & pulsing aura
     if self:isShielded() then
@@ -284,23 +349,21 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
         love.graphics.circle("line", px, py, size * 1.5 * pulse)
     end
 
-    -- Marker diamond
+    -- Marker diamond (reusable scratch table)
     local mr, mg, mb = 1, 1, 1
     if self.state == STATE_DRAWING then
         if self.isSlow then mr, mg, mb = 1, 0.4, 0.2 else mr, mg, mb = 0.2, 1, 1 end
     end
     love.graphics.setColor(mr, mg, mb, 1)
 
-    local diamond = {
-        px, py - size,
-        px + size, py,
-        px, py + size,
-        px - size, py
-    }
-    love.graphics.polygon("fill", diamond)
+    DIAMOND_POLYGON[1] = px;        DIAMOND_POLYGON[2] = py - size
+    DIAMOND_POLYGON[3] = px + size; DIAMOND_POLYGON[4] = py
+    DIAMOND_POLYGON[5] = px;        DIAMOND_POLYGON[6] = py + size
+    DIAMOND_POLYGON[7] = px - size; DIAMOND_POLYGON[8] = py
 
+    love.graphics.polygon("fill", DIAMOND_POLYGON)
     love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.polygon("line", diamond)
+    love.graphics.polygon("line", DIAMOND_POLYGON)
 end
 
 return Player

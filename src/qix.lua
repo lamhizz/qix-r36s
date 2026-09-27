@@ -2,12 +2,17 @@
 local Qix = {}
 Qix.__index = Qix
 
-local function ccw(A, B, C)
-    return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x)
+local function ccw(Ax, Ay, Bx, By, Cx, Cy)
+    return (Cy - Ay) * (Bx - Ax) > (By - Ay) * (Cx - Ax)
 end
 
 local function lineIntersect(p1, p2, p3, p4)
-    return (ccw(p1, p3, p4) ~= ccw(p2, p3, p4)) and (ccw(p1, p2, p3) ~= ccw(p1, p2, p4))
+    local p1x, p1y = p1.x, p1.y
+    local p2x, p2y = p2.x, p2.y
+    local p3x, p3y = p3.x, p3.y
+    local p4x, p4y = p4.x, p4.y
+    return (ccw(p1x, p1y, p3x, p3y, p4x, p4y) ~= ccw(p2x, p2y, p3x, p3y, p4x, p4y))
+       and (ccw(p1x, p1y, p2x, p2y, p3x, p3y) ~= ccw(p1x, p1y, p2x, p2y, p4x, p4y))
 end
 
 -- Convert HSV to RGB
@@ -33,19 +38,19 @@ function Qix.new(grid, startX, startY, speedMultiplier)
     self.grid = grid
     self.speedMultiplier = speedMultiplier or 1.0
 
-    local len = 25
+    local len = 18
     self.p1 = { x = startX or (grid.width / 2), y = startY or (grid.height / 2) }
     self.p2 = { x = self.p1.x + len, y = self.p1.y }
 
-    local speed = 1.8 * self.speedMultiplier
+    local speed = 1.42 * self.speedMultiplier
     local a1 = love.math.random() * math.pi * 2
     local a2 = love.math.random() * math.pi * 2
     self.v1 = { x = math.cos(a1) * speed, y = math.sin(a1) * speed }
     self.v2 = { x = math.cos(a2) * speed, y = math.sin(a2) * speed }
 
-    self.minLen = 20
-    self.maxLen = 60
-    self.trailLength = 22
+    self.minLen = 14
+    self.maxLen = 38
+    self.trailLength = 20
     self.trail = {}
     self.tumbleTimer = 0
     self.baseHue = love.math.random()
@@ -86,27 +91,29 @@ function Qix:update(dt)
         self.v2.y = math.sin(a2) * spd2
     end
 
-    -- Prediction & collision with borders
-    local next1 = { x = self.p1.x + self.v1.x * step, y = self.p1.y + self.v1.y * step }
-    local next2 = { x = self.p2.x + self.v2.x * step, y = self.p2.y + self.v2.y * step }
+    -- Prediction & collision with borders (zero allocations)
+    local next1X = self.p1.x + self.v1.x * step
+    local next1Y = self.p1.y + self.v1.y * step
+    local next2X = self.p2.x + self.v2.x * step
+    local next2Y = self.p2.y + self.v2.y * step
 
-    if self:isBlocked(next1.x, next1.y) or self:isBlocked(next1.x, self.p1.y) then
+    if self:isBlocked(next1X, next1Y) or self:isBlocked(next1X, self.p1.y) then
         self.v1.x = -self.v1.x + (love.math.random() - 0.5) * 0.4
     end
-    if self:isBlocked(next1.x, next1.y) or self:isBlocked(self.p1.x, next1.y) then
+    if self:isBlocked(next1X, next1Y) or self:isBlocked(self.p1.x, next1Y) then
         self.v1.y = -self.v1.y + (love.math.random() - 0.5) * 0.4
     end
 
-    if self:isBlocked(next2.x, next2.y) or self:isBlocked(next2.x, self.p2.y) then
+    if self:isBlocked(next2X, next2Y) or self:isBlocked(next2X, self.p2.y) then
         self.v2.x = -self.v2.x + (love.math.random() - 0.5) * 0.4
     end
-    if self:isBlocked(next2.x, next2.y) or self:isBlocked(self.p2.x, next2.y) then
+    if self:isBlocked(next2X, next2Y) or self:isBlocked(self.p2.x, next2Y) then
         self.v2.y = -self.v2.y + (love.math.random() - 0.5) * 0.4
     end
 
-    -- Clamp speeds
-    local maxSpd = 2.4 * self.speedMultiplier
-    local minSpd = 0.9 * self.speedMultiplier
+    -- Clamp speeds (tactical zoomed-out pacing)
+    local maxSpd = 1.85 * self.speedMultiplier
+    local minSpd = 0.65 * self.speedMultiplier
     local cur1 = math.sqrt(self.v1.x^2 + self.v1.y^2)
     local cur2 = math.sqrt(self.v2.x^2 + self.v2.y^2)
 
@@ -145,17 +152,24 @@ function Qix:update(dt)
         self.p2.y = self.p2.y + ny * diff
     end
 
-    -- Update ribbon trail (sampled smoothly at 60 Hz rate)
+    -- Update ribbon trail (recycle segments once full, zero allocations)
     self.trailTimer = (self.trailTimer or 0) + step
     if self.trailTimer >= 1.0 then
         self.trailTimer = self.trailTimer - 1.0
-        table.insert(self.trail, 1, {
-            p1 = { x = self.p1.x, y = self.p1.y },
-            p2 = { x = self.p2.x, y = self.p2.y }
-        })
-        while #self.trail > self.trailLength do
-            table.remove(self.trail)
+        local seg
+        if #self.trail >= self.trailLength then
+            seg = table.remove(self.trail)
+            seg.p1.x = self.p1.x
+            seg.p1.y = self.p1.y
+            seg.p2.x = self.p2.x
+            seg.p2.y = self.p2.y
+        else
+            seg = {
+                p1 = { x = self.p1.x, y = self.p1.y },
+                p2 = { x = self.p2.x, y = self.p2.y }
+            }
         end
+        table.insert(self.trail, 1, seg)
     end
 end
 
@@ -178,13 +192,14 @@ function Qix:draw(offsetX, offsetY, scaleX, scaleY)
     if n < 1 then return end
 
     love.graphics.setBlendMode("add")
-    love.graphics.setLineWidth(2.0 * scaleX)
 
+    -- Pass 1: Wide radiant outer glow / bloom
+    love.graphics.setLineWidth(3.4 * scaleX)
     for i = n, 1, -1 do
         local seg = self.trail[i]
-        local alpha = 0.2 + (0.8 * (n - i + 1) / n)
+        local alpha = (0.15 + (0.45 * (n - i + 1) / n)) * 0.4
         local hue = (self.baseHue + (i / n) * 0.8) % 1.0
-        local r, g, b = hsvToRgb(hue, 0.9, 1.0)
+        local r, g, b = hsvToRgb(hue, 0.95, 1.0)
 
         love.graphics.setColor(r, g, b, alpha)
         love.graphics.line(
@@ -192,6 +207,52 @@ function Qix:draw(offsetX, offsetY, scaleX, scaleY)
             offsetX + seg.p2.x * scaleX, offsetY + seg.p2.y * scaleY
         )
     end
+
+    -- Pass 2: Vibrant primary vector beam
+    love.graphics.setLineWidth(1.6 * scaleX)
+    for i = n, 1, -1 do
+        local seg = self.trail[i]
+        local alpha = 0.25 + (0.75 * (n - i + 1) / n)
+        local hue = (self.baseHue + (i / n) * 0.8) % 1.0
+        local r, g, b = hsvToRgb(hue, 0.85, 1.0)
+
+        love.graphics.setColor(r, g, b, alpha)
+        love.graphics.line(
+            offsetX + seg.p1.x * scaleX, offsetY + seg.p1.y * scaleY,
+            offsetX + seg.p2.x * scaleX, offsetY + seg.p2.y * scaleY
+        )
+    end
+
+    -- Pass 3: White-hot phosphor core on leading segments
+    local leadCount = math.min(n, 7)
+    love.graphics.setLineWidth(0.9 * scaleX)
+    for i = 1, leadCount do
+        local seg = self.trail[i]
+        local alpha = 0.9 * (1.0 - (i - 1) / leadCount)
+        love.graphics.setColor(1.0, 1.0, 1.0, alpha)
+        love.graphics.line(
+            offsetX + seg.p1.x * scaleX, offsetY + seg.p1.y * scaleY,
+            offsetX + seg.p2.x * scaleX, offsetY + seg.p2.y * scaleY
+        )
+    end
+
+    -- Glowing energy nodes at leading tips (p1, p2)
+    local seg1 = self.trail[1]
+    if seg1 then
+        local x1 = offsetX + seg1.p1.x * scaleX
+        local y1 = offsetY + seg1.p1.y * scaleY
+        local x2 = offsetX + seg1.p2.x * scaleX
+        local y2 = offsetY + seg1.p2.y * scaleY
+        local pulse = 0.75 + 0.25 * math.sin(self.baseHue * 10)
+
+        love.graphics.setColor(1.0, 0.9, 0.2, 0.55 * pulse)
+        love.graphics.circle("fill", x1, y1, 3.2 * scaleX)
+        love.graphics.circle("fill", x2, y2, 3.2 * scaleX)
+        love.graphics.setColor(1, 1, 1, 0.95)
+        love.graphics.circle("fill", x1, y1, 1.5 * scaleX)
+        love.graphics.circle("fill", x2, y2, 1.5 * scaleX)
+    end
+
     love.graphics.setBlendMode("alpha")
 end
 

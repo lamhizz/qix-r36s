@@ -1,8 +1,121 @@
-# QIX (1981 Arcade) - Native R36S & Desktop Port
+# QIX (1981 Arcade) - Native R36S Port (LÖVE 2D Engine)
 
-A faithful, high-performance native port of the seminal 1981 Taito arcade classic **QIX**, tailored specifically for the **R36S retro handheld console (RK3326 ARM64)** and macOS/desktop via the **LÖVE 2D engine**.
+A faithful, high-performance native port of the seminal 1981 Taito arcade classic **QIX**, built from the ground up for the **R36S retro handheld console (RK3326 ARM64)** and macOS/desktop using the **LÖVE 2D engine** (Lua 5.1 / LuaJIT).
 
-Features authentic chaotic multi-line vector physics with additive glow, dual drawing speeds (Fast vs Slow 2X double points), the sizzling idle Fuse, patrolling perimeter Sparx, countdown mutation to Super Sparx, dynamic background artwork uncovering, floating score popups, and toggleable CRT scanlines locked at 60 FPS in 640x480 resolution.
+The game runs as a **100% self-contained standalone PortMaster package**—it bundles its own ARM64 LÖVE 2D binary and shared libraries, requiring **zero external dependencies** on the handheld.
+
+---
+
+## Highlights & Features
+
+- **Built Specifically for R36S:** Locked at **640×480 resolution** and rock-solid **60 FPS** on the RK3326 Mali-G31 GPU.
+- **Tactical Board Scale:** High-resolution $355 \times 251$ discrete playfield grid ($1.8\times$ scale) providing a balanced playfield with ample tactical travel distances, smooth movement, and comfortable entity proportions.
+- **Arcade Intro Screen:** Features a 4-layer neon glowing "QIX" centerpiece with ambient attract-mode background helix, high score ribbon, and vertically centered menu options (**"START"**, **"HOW TO"**, and **"QUIT"**).
+- **In-Game "How To" Guide:** Comprehensive instructions screen detailing dual-speed scoring, fuse ignition, sparx mutation, and arcade secrets.
+- **Classic 1981 Split-Qix Victory (Levels 3+):** Slice between two roaming Qixes to trap them in separate compartments—instantly clearing the round and permanently unlocking high score multipliers (2X up to 9X)!
+- **Pristine Artwork Showcase in "FIT" Mode:** On level completion, the unveiled photo transitions to a 100% full-screen presentation in **FIT mode** (`math.min` scale) with clean letterbox framing so widescreen, portrait, and square photos are displayed without edge cropping.
+- **Patrolling Perimeter Sparx:** Glowing 8-pointed sparkler hazards that patrol outer borders and edges of claimed areas, forcing the player to keep moving along the perimeter or draw into the void.
+- **Super Sparx Pursuit (Level 2+):** In later rounds, when the level's countdown timer reaches zero, normal Sparx mutate into Super Sparx—moving faster, flashing menacing sirens, actively pursuing the Marker along newly claimed inner boundaries, and chasing onto active Stix lines!
+- **Anti-Camping Fuse:** Stopping or idling while drawing an incomplete Stix ignites a flame at the origin of the line that burns down the trail toward the player. Moving again instantly puts out the Fuse, but if it reaches the Marker, the player loses a life.
+- **Dynamic Photo Uncover System:** Cutting territory cuts away the dark veil to reveal custom background photography underneath (with fiery red/orange slow-draw and electric cyan fast-draw translucent glass tints).
+- **2.5-Second Grace Shield:** Activates upon respawning after death and at the start of each round, granting complete immunity from Sparx enemies with pulsing dual-ring energy auras and an on-screen notification.
+- **Framerate Independence:** Physics and enemy speeds are normalized to 60 FPS standard, ensuring identical gameplay speed on both 60 Hz handheld screens and 120 Hz Mac ProMotion displays.
+- **Arcade Visual FX & Particle System:** Zero-allocation 60 FPS particle pool powering plasma laser cutting sparks, starburst explosions on area capture, vector diamond shard death bursts, multi-pass phosphor vector bloom on the Qix ribbon, and subtle curved CRT glass bezel shading.
+- **Procedural 1981 Sound Synthesizer:** Real-time synthesized 8-bit arcade audio generated directly in code (no external sound file dependencies).
+
+---
+
+## Controls Reference
+
+### R36S Handheld Console (ArkOS / PortMaster)
+
+| Action | Handheld Control |
+| :--- | :--- |
+| **Move Along Perimeter / Border** | **D-Pad** or **Left Analog Stick** |
+| **Fast Draw (1X Points)** | **Hold `(A)`** + D-Pad Direction |
+| **Slow Draw (2X Double Points)** | **Hold `(B)`** + D-Pad Direction |
+| **Pause / System Menu** | **`START`** |
+| **Mute / Unmute Audio** | **`SELECT`** |
+| **Advance Artwork Showcase** | **`(A)`** |
+
+### macOS Preview & Desktop Testing
+
+| Action | Keyboard | USB / Bluetooth Gamepad |
+| :--- | :--- | :--- |
+| **Move Along Border** | `Arrow Keys` or `W, A, S, D` | D-Pad / Left Stick |
+| **Fast Draw (1X Points)** | **Hold `Space`** or `Z` | **Hold `(A)`** |
+| **Slow Draw (2X Points)** | **Hold `X`**, `Shift`, or `C` | **Hold `(B)`** |
+| **Pause / System Menu** | `Escape` or `P` | `START` |
+| **Mute / Unmute Audio** | `M` | `SELECT` / `Back` |
+| **Advance Artwork Showcase** | `A`, `Space`, `Enter`, or Mouse Click | `(A)` |
+
+---
+
+## Installing on R36S (Step-by-Step)
+
+1. Connect your R36S MicroSD card to your computer (or transfer via Wi-Fi SFTP/Samba).
+2. Download or copy **`dist/qix.zip`** from this repository.
+3. Unzip **`dist/qix.zip`** into your console's ports directory:
+   ```
+   /roms/ports/
+   ├── Qix.sh
+   └── qix/
+       ├── qix.love
+       ├── love
+       ├── libs/
+       │   ├── liblove-11.4.so
+       │   ├── libluajit-5.1.so.2
+       │   └── libogg.so.0
+       ├── art/
+       ├── fonts/
+       ├── port.json
+       ├── gameinfo.xml
+       ├── qix.gptk
+       ├── cover.png
+       └── screenshot.png
+   ```
+4. Put the MicroSD card back into your R36S, navigate to the **Ports** menu, and select **Qix**!
+
+---
+
+## Testing & Preview on Mac
+
+You can test and play the game on your Mac with zero compilation:
+
+### Option 1: Live Source Preview (Instant Live Reload)
+Run the preview script or double-click the launcher in Finder:
+```bash
+./preview_mac.sh
+```
+*(or double-click **`Preview.command`** in Finder)*. It boots directly from `src/`, allowing you to edit any Lua file and immediately test changes.
+
+### Option 2: Standalone macOS App
+Double-click **`Qix.app`** in your project folder to launch the standalone desktop app.
+
+---
+
+## Adding Custom Background Photos
+
+Drop any `.jpg`, `.jpeg`, or `.png` images into `src/art/`:
+- The game's dynamic **Art Deck scanner** automatically detects all images in the folder on startup.
+- Photos rotate round by round (Level 1 $\rightarrow$ Image 1, Level 2 $\rightarrow$ Image 2, etc.).
+- Photos are rendered with **proportional aspect-ratio centering ("cover" mode)**, so widescreen, square, and portrait images never stretch or distort.
+
+*(Master high-resolution source photos are preserved as backups in `art_original/`).*
+
+---
+
+## Building the Release Package
+
+Whenever you update game code or add new artwork:
+```bash
+./build_package.sh
+```
+
+This automated pipeline:
+1. Packages `src/` into `qix.love`.
+2. Syncs the local `Qix.app` bundle for desktop preview.
+3. Rebuilds **`dist/qix.zip`** ready to be dropped into `/roms/ports/` on your R36S.
 
 ---
 
@@ -36,73 +149,9 @@ qix-r36s/
 │
 ├── art_original/                 # Master high-resolution source photos (backup)
 │
-├── web-legacy/                   # Archived HTML5 / Web Prototype
-│   ├── index.html
-│   ├── css/
-│   └── js/
-│
+├── ideas-for-improvement.md      # Roadmap of gameplay mechanics from prototype
 ├── Qix.app                       # Standalone macOS application bundle
 ├── Preview.command               # Double-clickable macOS Finder launcher
-├── preview_mac.sh                # Command-line preview script (instant live reload)
+├── preview_mac.sh                # Command-line preview script
 └── build_package.sh              # Automated release packager
 ```
-
----
-
-## Development & Preview (macOS)
-
-### Instant Live Preview (Recommended)
-Edit files directly inside `src/` and run:
-```bash
-./preview_mac.sh
-```
-or double-click **`Preview.command`** in Finder. It runs the live source directory directly with zero build steps.
-
-### Standalone App
-You can also launch **`Qix.app`** directly from Finder.
-
-### Mac Controls:
-- **Move:** `Arrow Keys` or `W`, `A`, `S`, `D`
-- **Fast Draw (1X Points):** `Space` or `Z`
-- **Slow Draw (2X Points):** `X`, `Shift`, or `C`
-- **Pause & Options:** `Escape` or `P`
-- **Mute Audio:** `M`
-- **Gamepad:** Plugged-in USB/Bluetooth controllers (D-Pad + `A`/`B`)
-
----
-
-## Building the R36S PortMaster Package
-
-Whenever you modify game code or add new background images:
-```bash
-./build_package.sh
-```
-
-This automated pipeline:
-1. Packages `src/` into `qix.love`.
-2. Syncs `Qix.app` for macOS testing.
-3. Builds **`dist/qix.zip`** (self-contained standalone PortMaster release with ARM64 runtime).
-
----
-
-## Installing on R36S (ArkOS / PortMaster)
-
-1. Connect your R36S MicroSD card to your computer (or use SFTP / Samba).
-2. Unzip **`dist/qix.zip`** into your ports directory:
-   ```
-   /roms/ports/
-   ├── Qix.sh
-   └── qix/
-       ├── qix.love
-       ├── love
-       ├── libs/
-       └── ...
-   ```
-3. Insert the card into your R36S, go to **Ports**, and launch **Qix**!
-
----
-
-## Custom Background Artwork
-
-Drop any `.jpg`, `.jpeg`, or `.png` images into `src/art/`.
-The game's dynamic Art Deck scanner will automatically rotate through your photos across rounds with proportional, aspect-ratio-preserving centering!
