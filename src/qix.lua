@@ -62,8 +62,11 @@ function Qix:isBlocked(x, y)
 end
 
 function Qix:update(dt)
+    -- Normalize movement step to 60 FPS standard
+    -- Ensures identical speed on 60Hz (R36S) and 120Hz/ProMotion (Mac)
+    local step = math.min(2.0, dt * 60)
     self.baseHue = (self.baseHue + dt * 0.15) % 1.0
-    self.tumbleTimer = self.tumbleTimer + 1
+    self.tumbleTimer = self.tumbleTimer + step
 
     -- Periodic slight steering perturbation
     if self.tumbleTimer > 12 then
@@ -84,8 +87,8 @@ function Qix:update(dt)
     end
 
     -- Prediction & collision with borders
-    local next1 = { x = self.p1.x + self.v1.x, y = self.p1.y + self.v1.y }
-    local next2 = { x = self.p2.x + self.v2.x, y = self.p2.y + self.v2.y }
+    local next1 = { x = self.p1.x + self.v1.x * step, y = self.p1.y + self.v1.y * step }
+    local next2 = { x = self.p2.x + self.v2.x * step, y = self.p2.y + self.v2.y * step }
 
     if self:isBlocked(next1.x, next1.y) or self:isBlocked(next1.x, self.p1.y) then
         self.v1.x = -self.v1.x + (love.math.random() - 0.5) * 0.4
@@ -102,8 +105,8 @@ function Qix:update(dt)
     end
 
     -- Clamp speeds
-    local maxSpd = 2.6 * self.speedMultiplier
-    local minSpd = 1.0 * self.speedMultiplier
+    local maxSpd = 2.4 * self.speedMultiplier
+    local minSpd = 0.9 * self.speedMultiplier
     local cur1 = math.sqrt(self.v1.x^2 + self.v1.y^2)
     local cur2 = math.sqrt(self.v2.x^2 + self.v2.y^2)
 
@@ -112,13 +115,13 @@ function Qix:update(dt)
     if cur2 > maxSpd then self.v2.x = (self.v2.x/cur2)*maxSpd; self.v2.y = (self.v2.y/cur2)*maxSpd end
     if cur2 < minSpd then self.v2.x = (self.v2.x/cur2)*minSpd; self.v2.y = (self.v2.y/cur2)*minSpd end
 
-    if not self:isBlocked(self.p1.x + self.v1.x, self.p1.y + self.v1.y) then
-        self.p1.x = self.p1.x + self.v1.x
-        self.p1.y = self.p1.y + self.v1.y
+    if not self:isBlocked(self.p1.x + self.v1.x * step, self.p1.y + self.v1.y * step) then
+        self.p1.x = self.p1.x + self.v1.x * step
+        self.p1.y = self.p1.y + self.v1.y * step
     end
-    if not self:isBlocked(self.p2.x + self.v2.x, self.p2.y + self.v2.y) then
-        self.p2.x = self.p2.x + self.v2.x
-        self.p2.y = self.p2.y + self.v2.y
+    if not self:isBlocked(self.p2.x + self.v2.x * step, self.p2.y + self.v2.y * step) then
+        self.p2.x = self.p2.x + self.v2.x * step
+        self.p2.y = self.p2.y + self.v2.y * step
     end
 
     -- Distance tether
@@ -142,13 +145,17 @@ function Qix:update(dt)
         self.p2.y = self.p2.y + ny * diff
     end
 
-    -- Update ribbon trail
-    table.insert(self.trail, 1, {
-        p1 = { x = self.p1.x, y = self.p1.y },
-        p2 = { x = self.p2.x, y = self.p2.y }
-    })
-    while #self.trail > self.trailLength do
-        table.remove(self.trail)
+    -- Update ribbon trail (sampled smoothly at 60 Hz rate)
+    self.trailTimer = (self.trailTimer or 0) + step
+    if self.trailTimer >= 1.0 then
+        self.trailTimer = self.trailTimer - 1.0
+        table.insert(self.trail, 1, {
+            p1 = { x = self.p1.x, y = self.p1.y },
+            p2 = { x = self.p2.x, y = self.p2.y }
+        })
+        while #self.trail > self.trailLength do
+            table.remove(self.trail)
+        end
     end
 end
 
