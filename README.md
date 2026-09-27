@@ -1,48 +1,108 @@
-# QIX - Classic 1981 Arcade Game
+# QIX (1981 Arcade) - Native R36S & Desktop Port
 
-A faithful, modern web recreation of the seminal 1981 Taito arcade classic **QIX**, featuring authentic multi-line vector physics, dual drawing speeds, the sizzling Fuse, patrolling Sparx and Super Sparx, dual Qix splitting on Level 3+, procedural 8-bit Web Audio sound effects, and a neon arcade cabinet presentation with toggleable CRT scanlines.
+A faithful, high-performance native port of the seminal 1981 Taito arcade classic **QIX**, tailored specifically for the **R36S retro handheld console (RK3326 ARM64)** and macOS/desktop via the **LÖVE 2D engine**.
 
-## How to Run
+Features authentic chaotic multi-line vector physics with additive glow, dual drawing speeds (Fast vs Slow 2X double points), the sizzling idle Fuse, patrolling perimeter Sparx, countdown mutation to Super Sparx, dynamic background artwork uncovering, floating score popups, and toggleable CRT scanlines locked at 60 FPS in 640x480 resolution.
 
-To run the game locally:
+---
 
-```bash
-# Using Python 3 built-in HTTP server:
-python3 -m http.server 3000
+## Repository Structure
 
-# Or using Node.js:
-npx serve .
+```
+qix-r36s/
+├── src/                          # Active Game Engine Source (LÖVE 2D Lua)
+│   ├── main.lua                  # Game loop, state machine, HUD, banners
+│   ├── conf.lua                  # 640x480 resolution & module flags
+│   ├── grid.lua                  # BFS flood-fill, territory masking & cover scaling
+│   ├── player.lua                # Player marker, stix drawing, grace shield
+│   ├── qix.lua                   # Chaotic vector ribbon helix with additive glow
+│   ├── sparx.lua                 # Patrolling perimeter sparks & super mutation
+│   ├── audio.lua                 # Procedural 1981 arcade sound synthesizer
+│   ├── fonts/                    # Press Start 2P TrueType arcade fonts
+│   └── art/                      # Game art deck (auto-scaled for levels)
+│
+├── port/                         # PortMaster Handheld Packaging Assets
+│   ├── Qix.sh                    # R36S PortMaster launch script
+│   ├── port.json                 # PortMaster manifest
+│   ├── gameinfo.xml              # EmulationStation metadata
+│   ├── qix.gptk                  # Gamepad controller mapping
+│   ├── love                      # Precompiled ARM64 Love2D binary for RK3326
+│   ├── libs/                     # Bundled shared libraries (liblove, luajit, libogg)
+│   ├── cover.png                 # Cabinet cover art
+│   └── screenshot.png            # Gameplay screenshot
+│
+├── dist/                         # Production Build Artifacts
+│   └── qix.zip                   # Ready-to-install PortMaster release zip
+│
+├── art_original/                 # Master high-resolution source photos (backup)
+│
+├── web-legacy/                   # Archived HTML5 / Web Prototype
+│   ├── index.html
+│   ├── css/
+│   └── js/
+│
+├── Qix.app                       # Standalone macOS application bundle
+├── Preview.command               # Double-clickable macOS Finder launcher
+├── preview_mac.sh                # Command-line preview script (instant live reload)
+└── build_package.sh              # Automated release packager
 ```
 
-Then open [http://localhost:3000](http://localhost:3000) in your web browser.
+---
 
-## Controls
+## Development & Preview (macOS)
 
-- **Movement**: Arrow Keys or `W`, `A`, `S`, `D`
-- **Fast Draw**: `Space` or `J` (faster movement, cyan trail, normal points)
-- **Slow Draw**: `Shift` or `K` (half speed, red/orange trail, **DOUBLE POINTS**)
-- **Pause**: `P`
-- **Toggle Sound**: `M`
-- **Touch / Mobile**: Use the on-screen virtual D-pad, swipe gestures, and `FAST` / `SLOW` buttons
-- **Install as PWA**: Tap the **📲 INSTALL** button in the header (or "Add to Home Screen" on iOS Safari / Chrome) to install QIX as a native offline app.
+### Instant Live Preview (Recommended)
+Edit files directly inside `src/` and run:
+```bash
+./preview_mac.sh
+```
+or double-click **`Preview.command`** in Finder. It runs the live source directory directly with zero build steps.
 
-## Progressive Web App (PWA)
+### Standalone App
+You can also launch **`Qix.app`** directly from Finder.
 
-QIX is a full Progressive Web App:
-- **Offline Support**: The Service Worker pre-caches all core gameplay engines, retro procedural sounds, icons, screenshots, and default level art so you can play anywhere without an internet connection.
-- **Installable**: Install directly on iOS, Android, macOS, Windows, and ChromeOS as a standalone, distraction-free arcade cabinet. Supports Chrome rich install dialogs with high-definition gameplay screenshots.
-- **App Shortcuts**: Quick launch actions from your home screen or dock directly into "Start New Game" or "High Scores".
-- **Arcade Offline Indicator**: Automatic real-time detection and retro HUD toast notifications for offline and reconnected states.
-- **Mobile First**: Features high-resolution adaptive app icons (192px, 512px, maskable, SVG), iOS install walkthrough modal, and safe-area inset adaptation for edge-to-edge screens.
+### Mac Controls:
+- **Move:** `Arrow Keys` or `W`, `A`, `S`, `D`
+- **Fast Draw (1X Points):** `Space` or `Z`
+- **Slow Draw (2X Points):** `X`, `Shift`, or `C`
+- **Pause & Options:** `Escape` or `P`
+- **Mute Audio:** `M`
+- **Gamepad:** Plugged-in USB/Bluetooth controllers (D-Pad + `A`/`B`)
 
-## Game Rules
+---
 
-1. **Objective**: Claim the required percentage of the playfield (starts at **65%** on Level 1 and scales up to **80%** on master levels) to clear each stage.
-2. **Hidden Background Artwork**: Each level loads a random background image from the `level-images/` directory. As you enclose territory, the captured areas **uncover and reveal the hidden background art**! Clearing the level reveals the full image in celebration.
-3. **Adding Custom Images**: Drop any `.jpg`, `.jpeg`, or `.png` files into the `level-images/` folder and add their filename to `level-images/manifest.json`.
-4. **The Qix**: The chaotic multi-line vector entity bounces unpredictably. You are safe on borders, but if the Qix hits you or your uncompleted Stix line, you lose a life.
-5. **The Fuse**: If you pause while drawing a Stix, warning sparks ignite at 0.4s. If you remain idle past 0.75s, a burning fuse sparks at the origin and crawls along your line toward you! Resume moving to survive.
-6. **Sparx & Super Sparx**: Sparx patrol active borders. Level 1 starts with 1 Sparx and a generous 45s timer; higher levels increase pressure. When the countdown timer expires, an extra Sparx enters and all Sparx mutate into **Super Sparx**, which can pursue you down uncompleted Stix lines!
-7. **Secret Dual Qix Split (Level 3+)**: Two Qixes roam the field. If you draw a line separating the two Qixes into isolated compartments, the level is immediately cleared with a permanent **Score Multiplier** (up to 9x)!
-8. **Bold Cut Multipliers**: Slow Draw awards double points, and bold cuts enclosing 10%+ or 20%+ of the board award special **2x and 3x Combo Multipliers**!
-9. **Milestone Extra Lives**: Bonus lives are awarded at 50,000 pts, 125,000 pts, and for achieving 90%+ territory claims.
+## Building the R36S PortMaster Package
+
+Whenever you modify game code or add new background images:
+```bash
+./build_package.sh
+```
+
+This automated pipeline:
+1. Packages `src/` into `qix.love`.
+2. Syncs `Qix.app` for macOS testing.
+3. Builds **`dist/qix.zip`** (self-contained standalone PortMaster release with ARM64 runtime).
+
+---
+
+## Installing on R36S (ArkOS / PortMaster)
+
+1. Connect your R36S MicroSD card to your computer (or use SFTP / Samba).
+2. Unzip **`dist/qix.zip`** into your ports directory:
+   ```
+   /roms/ports/
+   ├── Qix.sh
+   └── qix/
+       ├── qix.love
+       ├── love
+       ├── libs/
+       └── ...
+   ```
+3. Insert the card into your R36S, go to **Ports**, and launch **Qix**!
+
+---
+
+## Custom Background Artwork
+
+Drop any `.jpg`, `.jpeg`, or `.png` images into `src/art/`.
+The game's dynamic Art Deck scanner will automatically rotate through your photos across rounds with proportional, aspect-ratio-preserving centering!

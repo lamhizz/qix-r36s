@@ -95,6 +95,9 @@ function love.load()
     game.grid = Grid.new(320, 226)
     game.player = Player.new(game.grid)
 
+    -- Scan art directory for dynamic image deck
+    game:scanArtDeck()
+
     -- Load high score if available
     local info = love.filesystem.getInfo("highscore.txt")
     if info then
@@ -102,6 +105,23 @@ function love.load()
         if data and tonumber(data) then
             game.highScore = tonumber(data)
         end
+    end
+end
+
+function game:scanArtDeck()
+    self.artDeck = {}
+    if love.filesystem.getInfo("art") then
+        local files = love.filesystem.getDirectoryItems("art")
+        table.sort(files)
+        for _, file in ipairs(files) do
+            local lower = file:lower()
+            if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                table.insert(self.artDeck, "art/" .. file)
+            end
+        end
+    end
+    if #self.artDeck == 0 and love.filesystem.getInfo("cover.png") then
+        table.insert(self.artDeck, "cover.png")
     end
 end
 
@@ -132,12 +152,13 @@ function game:startLevel(levelNum)
     self.grid:init()
     self.player:reset()
 
-    -- Load background art for level uncover
-    local levelImg = string.format("art/level%d.png", levelNum)
-    if not self.grid:loadBackground(levelImg) then
-        if not self.grid:loadBackground("art/level1.png") then
-            self.grid:loadBackground("cover.png")
-        end
+    -- Load background art for level uncover (rotates through art deck)
+    if #self.artDeck > 0 then
+        local artIndex = ((levelNum - 1) % #self.artDeck) + 1
+        local chosenArt = self.artDeck[artIndex]
+        self.grid:loadBackground(chosenArt)
+    else
+        self.grid:loadBackground(nil)
     end
 
     -- Spawn Qix: Level 1-2 has 1 Qix; Level 3+ has 2 independent Qixes!
@@ -217,9 +238,10 @@ end
 function game:onPlayerDeath(reason)
     Audio.stopAll()
     Audio.play("death")
+    self.state = "DEAD"
     self.player.state = Player.STATE_DEAD
     self.lives = self.lives - 1
-    self.deathTimer = 1.8
+    self.deathTimer = 1.0
 
     -- Screen shake impact
     self.shakeDuration = 0.35
@@ -293,11 +315,18 @@ function love.update(dt)
             end
         end
 
-    elseif game.player.state == Player.STATE_DEAD then
+    elseif game.state == "DEAD" then
         game.deathTimer = game.deathTimer - dt
         if game.deathTimer <= 0 then
             if game.lives > 0 then
                 game.player:respawn()
+                -- Reset Sparx to opposite top corners so player has safe breathing room
+                game.sparxList = {
+                    Sparx.new(game.grid, 0, 0, true, false),
+                    Sparx.new(game.grid, game.grid.width - 1, 0, false, false)
+                }
+                game.bannerText = "⚡ SAFE SHIELD ACTIVE ⚡"
+                game.bannerTimer = 1.8
                 game.state = "PLAYING"
             else
                 game:saveHighScore()
@@ -697,9 +726,14 @@ function game:drawLevelClear()
     -- 1. Full 100% Unobstructed Artwork Reveal
     if self.grid.bgImage then
         love.graphics.setColor(1, 1, 1, 1)
-        local sx = 640 / self.grid.bgImage:getWidth()
-        local sy = 480 / self.grid.bgImage:getHeight()
-        love.graphics.draw(self.grid.bgImage, 0, 0, 0, sx, sy)
+        local imgW = self.grid.bgImage:getWidth()
+        local imgH = self.grid.bgImage:getHeight()
+        local scale = math.max(640 / imgW, 480 / imgH)
+        local drawW = imgW * scale
+        local drawH = imgH * scale
+        local drawX = (640 - drawW) * 0.5
+        local drawY = (480 - drawH) * 0.5
+        love.graphics.draw(self.grid.bgImage, drawX, drawY, 0, scale, scale)
     end
 
     -- 2. Sleek Glass Showcase Banner at Bottom

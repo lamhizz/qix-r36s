@@ -319,12 +319,22 @@ function Grid:updateAllPixels()
 end
 
 function Grid:draw(offsetX, offsetY, scaleX, scaleY)
-    -- 1. Draw uncovered background artwork if present
+    -- 1. Draw uncovered background artwork if present (proportional cover scaling)
     if self.bgImage then
         love.graphics.setColor(1, 1, 1, 1)
-        local sx = (self.width * scaleX) / self.bgImage:getWidth()
-        local sy = (self.height * scaleY) / self.bgImage:getHeight()
-        love.graphics.draw(self.bgImage, offsetX, offsetY, 0, sx, sy)
+        local targetW = self.width * scaleX
+        local targetH = self.height * scaleY
+        local imgW = self.bgImage:getWidth()
+        local imgH = self.bgImage:getHeight()
+        local scale = math.max(targetW / imgW, targetH / imgH)
+        local drawW = imgW * scale
+        local drawH = imgH * scale
+        local drawX = offsetX + (targetW - drawW) * 0.5
+        local drawY = offsetY + (targetH - drawH) * 0.5
+
+        love.graphics.setScissor(offsetX, offsetY, targetW, targetH)
+        love.graphics.draw(self.bgImage, drawX, drawY, 0, scale, scale)
+        love.graphics.setScissor()
     end
 
     -- 2. Draw grid overlay (empty mask, borders, tinted claims)

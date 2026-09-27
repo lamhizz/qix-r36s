@@ -36,8 +36,8 @@ function Player:reset()
     self.fuseDelay = 1.0
     self.fuseBurnSpeed = 50
 
-    self.shieldTimer = 0
     self.shieldDuration = 2.5
+    self.shieldTimer = self.shieldDuration -- Grace period on level start
 
     self.moveAccumulator = 0
     self.animTime = 0
@@ -273,10 +273,15 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
     local py = offsetY + self.y * scaleY
     local size = 5 * scaleX
 
-    -- Respawn shield flashing
-    if self:isShielded() and math.floor(self.animTime * 10) % 2 == 0 then
-        love.graphics.setColor(0.3, 0.8, 1, 0.5)
-        love.graphics.circle("line", px, py, size * 2.2)
+    -- Respawn shield flashing & pulsing aura
+    if self:isShielded() then
+        local pulse = 1.0 + 0.25 * math.sin(self.animTime * 12)
+        local alpha = 0.45 + 0.35 * math.sin(self.animTime * 14)
+        love.graphics.setColor(0.0, 0.95, 1.0, alpha)
+        love.graphics.setLineWidth(1.5 * scaleX)
+        love.graphics.circle("line", px, py, size * 2.2 * pulse)
+        love.graphics.setColor(1.0, 0.85, 0.2, alpha * 0.7)
+        love.graphics.circle("line", px, py, size * 1.5 * pulse)
     end
 
     -- Marker diamond
