@@ -39,17 +39,55 @@ function Grid.new(width, height)
     return self
 end
 
-function Grid:loadBackground(imagePath)
-    if imagePath and love.filesystem.getInfo(imagePath) then
-        local success, img = pcall(love.graphics.newImage, imagePath)
-        if success then
-            self.bgImage = img
-            self.bgImage:setFilter("linear", "linear")
-            self:updateAllPixels()
-            return true
-        end
+function Grid:loadBackground(artEntry)
+    if self.bgImage and self.bgImage.release then
+        pcall(function() self.bgImage:release() end)
     end
     self.bgImage = nil
+
+    if not artEntry then
+        self:updateAllPixels()
+        return false
+    end
+
+    local path = type(artEntry) == "table" and artEntry.path or artEntry
+    local isExternal = (type(artEntry) == "table" and artEntry.isExternal) or
+                       (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
+
+    local img = nil
+
+    -- 1. If external file (SD card path), load via standard io and FileData
+    if isExternal then
+        local f = io.open(path, "rb")
+        if f then
+            local data = f:read("*all")
+            f:close()
+            local filename = path:match("([^/\\]+)$") or "art.jpg"
+            local okData, fileData = pcall(love.filesystem.newFileData, data, filename)
+            if okData and fileData then
+                local success, loadedImg = pcall(love.graphics.newImage, fileData)
+                if success and loadedImg then
+                    img = loadedImg
+                end
+            end
+        end
+    end
+
+    -- 2. If not external or external load failed, load via love.filesystem
+    if not img and love.filesystem.getInfo(path) then
+        local success, loadedImg = pcall(love.graphics.newImage, path)
+        if success and loadedImg then
+            img = loadedImg
+        end
+    end
+
+    if img then
+        self.bgImage = img
+        self.bgImage:setFilter("linear", "linear")
+        self:updateAllPixels()
+        return true
+    end
+
     self:updateAllPixels()
     return false
 end

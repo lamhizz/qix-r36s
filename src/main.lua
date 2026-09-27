@@ -156,18 +156,100 @@ end
 
 function game:scanArtDeck()
     self.artDeck = {}
-    if love.filesystem.getInfo("art") then
-        local files = love.filesystem.getDirectoryItems("art")
-        table.sort(files)
-        for _, file in ipairs(files) do
-            local lower = file:lower()
-            if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
-                table.insert(self.artDeck, "art/" .. file)
+
+    local function naturalSort(a, b)
+        local aName = type(a) == "table" and a.name or a
+        local bName = type(b) == "table" and b.name or b
+        local function pad(num) return string.format("%08d", tonumber(num)) end
+        local aKey = aName:lower():gsub("(%d+)", pad)
+        local bKey = bName:lower():gsub("(%d+)", pad)
+        return aKey < bKey
+    end
+
+    -- 1. Check external art directory on physical disk / SD card (e.g. /roms/ports/qix/art/)
+    local base = love.filesystem.getSourceBaseDirectory()
+    local extArtDir = base and (base .. "/art")
+    local externalFiles = {}
+
+    if extArtDir then
+        -- Attempt 1: Scan external directory using io.popen (Linux/macOS)
+        local p = io.popen('ls -1 "' .. extArtDir .. '" 2>/dev/null')
+        if p then
+            for line in p:lines() do
+                local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
+                local lower = clean:lower()
+                if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                    table.insert(externalFiles, {
+                        path = extArtDir .. "/" .. clean,
+                        name = clean,
+                        isExternal = true
+                    })
+                end
+            end
+            p:close()
+        end
+
+        -- Attempt 2: Manifest file fallback if popen returned nothing
+        if #externalFiles == 0 then
+            local mf = io.open(extArtDir .. "/manifest.txt", "r")
+            if mf then
+                for line in mf:lines() do
+                    local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
+                    local lower = clean:lower()
+                    if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                        local testF = io.open(extArtDir .. "/" .. clean, "rb")
+                        if testF then
+                            testF:close()
+                            table.insert(externalFiles, {
+                                path = extArtDir .. "/" .. clean,
+                                name = clean,
+                                isExternal = true
+                            })
+                        end
+                    end
+                end
+                mf:close()
             end
         end
     end
-    if #self.artDeck == 0 and love.filesystem.getInfo("cover.png") then
-        table.insert(self.artDeck, "cover.png")
+
+    if #externalFiles > 0 then
+        table.sort(externalFiles, naturalSort)
+        self.artDeck = externalFiles
+        print(string.format("Loaded %d custom photos from external art directory: %s", #self.artDeck, extArtDir))
+        return
+    end
+
+    -- 2. Fall back to internal bundled art deck inside qix.love
+    local internalFiles = {}
+    if love.filesystem.getInfo("art") then
+        local files = love.filesystem.getDirectoryItems("art")
+        for _, file in ipairs(files) do
+            local lower = file:lower()
+            if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                table.insert(internalFiles, {
+                    path = "art/" .. file,
+                    name = file,
+                    isExternal = false
+                })
+            end
+        end
+    end
+
+    if #internalFiles > 0 then
+        table.sort(internalFiles, naturalSort)
+        self.artDeck = internalFiles
+        print(string.format("Loaded %d background photos from bundled internal art deck.", #self.artDeck))
+        return
+    end
+
+    -- 3. Fall back to cover.png if available
+    if love.filesystem.getInfo("cover.png") then
+        table.insert(self.artDeck, {
+            path = "cover.png",
+            name = "cover.png",
+            isExternal = false
+        })
     end
 end
 

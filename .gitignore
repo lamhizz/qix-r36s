@@ -7,3 +7,13 @@ level-images/*
 !level-images/index.php
 !level-images/.htaccess
 !level-images/manifest.json
+
+# Custom Artwork Deck (ignore user-provided photos, keep default repo assets)
+src/art/*.jpg
+src/art/*.jpeg
+src/art/*.png
+!src/art/pexels-*.jpg
+src/art/manifest.txt
+src/art/manifest.json
+src/art/index.php
+
