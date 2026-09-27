@@ -222,15 +222,20 @@ function game:onAreaCaptured(captureResult)
     -- Check level clear threshold (75%)
     if captureResult.percent >= self.targetPercent then
         self.state = "LEVEL_CLEAR"
-        self.clearTimer = 3.5
+        self.clearPhase = "SCORES"
+        self.clearTimer = 2.5 -- Show score card briefly, then transition to pure artwork showcase
+        self.clearPercent = captureResult.percent
         Audio.play("bonus")
 
         -- Extra bonus for exceeding target threshold
         local excess = captureResult.percent - self.targetPercent
         if excess > 0 then
             local bonus = math.floor(excess * 1000)
+            self.clearBonus = bonus
             self.score = self.score + bonus
             self:saveHighScore()
+        else
+            self.clearBonus = 0
         end
     end
 end
@@ -335,10 +340,13 @@ function love.update(dt)
         end
 
     elseif game.state == "LEVEL_CLEAR" then
-        game.clearTimer = game.clearTimer - dt
-        if game.clearTimer <= 0 or love.keyboard.isDown("return", "space") or game.input.fastDraw then
-            game:startLevel(game.level + 1)
+        if game.clearPhase == "SCORES" then
+            game.clearTimer = game.clearTimer - dt
+            if game.clearTimer <= 0 then
+                game.clearPhase = "SHOWCASE"
+            end
         end
+        -- In SHOWCASE mode: holds indefinitely so user can admire the art until pressing A
 
     elseif game.state == "GAME_OVER" then
         if love.keyboard.isDown("return", "space") or game.input.fastDraw or game.input.slowDraw then
@@ -418,14 +426,36 @@ function love.gamepadpressed(joystick, button)
             if game.state == "TITLE" then game:startNewGame() else game.state = "TITLE" end
         end
     elseif game.state == "LEVEL_CLEAR" then
-        if button == "start" or button == "a" or button == "b" then
+        if button == "a" or button == "start" then
+            if game.clearPhase == "SCORES" then
+                game.clearPhase = "SHOWCASE"
+            elseif game.clearPhase == "SHOWCASE" then
+                game:startLevel(game.level + 1)
+            end
+        end
+    end
+end
+
+function love.mousepressed(x, y, button)
+    if game.state == "LEVEL_CLEAR" then
+        if game.clearPhase == "SCORES" then
+            game.clearPhase = "SHOWCASE"
+        elseif game.clearPhase == "SHOWCASE" then
             game:startLevel(game.level + 1)
         end
     end
 end
 
 function love.keypressed(key)
-    if key == "escape" or key == "p" then
+    if game.state == "LEVEL_CLEAR" then
+        if key == "a" or key == "return" or key == "space" then
+            if game.clearPhase == "SCORES" then
+                game.clearPhase = "SHOWCASE"
+            elseif game.clearPhase == "SHOWCASE" then
+                game:startLevel(game.level + 1)
+            end
+        end
+    elseif key == "escape" or key == "p" then
         if game.state == "PLAYING" then
             game.state = "PAUSED"
             game.pauseIndex = 1
@@ -534,8 +564,8 @@ function love.draw()
 
     love.graphics.pop()
 
-    -- Authentic Arcade CRT Scanline Overlay
-    if game.crtFilter then
+    -- Authentic Arcade CRT Scanline Overlay (skipped during LEVEL_CLEAR for 100% pristine artwork)
+    if game.crtFilter and game.state ~= "LEVEL_CLEAR" then
         love.graphics.setColor(0, 0, 0, 0.20)
         love.graphics.setLineWidth(1)
         for y = 0, 480, 3 do
@@ -736,25 +766,56 @@ function game:drawLevelClear()
         love.graphics.draw(self.grid.bgImage, drawX, drawY, 0, scale, scale)
     end
 
-    -- 2. Sleek Glass Showcase Banner at Bottom
-    love.graphics.setColor(0.03, 0.04, 0.08, 0.85)
-    love.graphics.rectangle("fill", 40, 370, 560, 90, 8, 8)
+    -- Phase 1: Scores summary banner (briefly shown)
+    if self.clearPhase == "SCORES" then
+        love.graphics.setColor(0.03, 0.04, 0.08, 0.85)
+        love.graphics.rectangle("fill", 40, 365, 560, 95, 8, 8)
 
-    love.graphics.setColor(1.0, 0.85, 0.1, 1)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", 40, 370, 560, 90, 8, 8)
+        love.graphics.setColor(1.0, 0.85, 0.1, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", 40, 365, 560, 95, 8, 8)
 
-    love.graphics.setFont(game.fontMid)
-    love.graphics.setColor(0.2, 1.0, 0.4, 1)
-    love.graphics.printf(string.format("★ LEVEL %d COMPLETE! ★", self.level), 40, 382, 560, "center")
+        love.graphics.setFont(game.fontMid)
+        love.graphics.setColor(0.2, 1.0, 0.4, 1)
+        love.graphics.printf(string.format("★ LEVEL %d COMPLETE! ★", self.level), 40, 375, 560, "center")
 
-    love.graphics.setFont(game.font)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.printf(string.format("TERRITORY UNVEILED: %4.1f%% (GOAL: %d%%)", self.grid:getClaimedPercent(), self.targetPercent), 40, 410, 560, "center")
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(string.format("TERRITORY UNVEILED: %4.1f%% (GOAL: %d%%)", self.clearPercent or 75, self.targetPercent), 40, 404, 560, "center")
 
-    love.graphics.setFont(game.fontSmall)
-    love.graphics.setColor(1, 0.85, 0.2, 1)
-    love.graphics.printf("PRESS (A) OR START FOR NEXT LEVEL", 40, 435, 560, "center")
+        love.graphics.setFont(game.fontSmall)
+        love.graphics.setColor(1, 0.85, 0.2, 1)
+        if self.clearBonus and self.clearBonus > 0 then
+            love.graphics.printf(string.format("OVER-QUOTA BONUS: +%d PTS", self.clearBonus), 40, 432, 560, "center")
+        else
+            love.graphics.printf("PREPARING ARTWORK SHOWCASE...", 40, 432, 560, "center")
+        end
+
+    -- Phase 2: Pristine Artwork Showcase (NO graphics on image, only small "A" button at bottom right)
+    elseif self.clearPhase == "SHOWCASE" then
+        local bx = 598
+        local by = 445
+        local pulse = 0.8 + 0.2 * math.sin(love.timer.getTime() * 5)
+
+        -- Sleek dark backing badge
+        love.graphics.setColor(0, 0, 0, 0.65)
+        love.graphics.circle("fill", bx, by, 18)
+
+        -- Glowing neon cyan border
+        love.graphics.setColor(0.0, 0.95, 1.0, 0.95 * pulse)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle("line", bx, by, 18)
+
+        -- "A" button text
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("A", bx - 18, by - 6, 36, "center")
+
+        -- Subtle hint tag to the left
+        love.graphics.setFont(game.fontSmall)
+        love.graphics.setColor(1, 1, 1, 0.75 * pulse)
+        love.graphics.printf("NEXT", bx - 70, by - 5, 46, "right")
+    end
 end
 
 function game:drawGameOver()
