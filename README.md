@@ -66,7 +66,8 @@ The game runs as a **100% self-contained standalone PortMaster package**—it bu
        │   ├── liblove-11.4.so
        │   ├── libluajit-5.1.so.2
        │   └── libogg.so.0
-       ├── art/
+       ├── art/                      # Background uncover photos
+       ├── foreground-art/           # Circuit board / cover skins for playfield
        ├── fonts/
        ├── port.json
        ├── gameinfo.xml
@@ -94,14 +95,12 @@ Double-click **`Qix.app`** in your project folder to launch the standalone deskt
 
 ---
 
-## Adding Custom Background Photos
+## Custom Background Photos & Foreground Skins
 
-Drop any `.jpg`, `.jpeg`, or `.png` images into `src/art/`:
-- The game's dynamic **Art Deck scanner** automatically detects all images in the folder on startup.
-- Photos rotate round by round (Level 1 $\rightarrow$ Image 1, Level 2 $\rightarrow$ Image 2, etc.).
-- Photos are rendered with **proportional aspect-ratio centering ("cover" mode)**, so widescreen, square, and portrait images never stretch or distort.
-
-*(Master high-resolution source photos are preserved as backups in `art_original/`).*
+- **Background Photos (`src/art/` or `/roms/ports/qix/art/`):**
+  Drop any `.jpg`, `.jpeg`, or `.png` images into `art/`. The game automatically detects and cycles through them round by round as you slice away territory.
+- **Foreground Playfield Skin (`src/foreground-art/` or `/roms/ports/qix/foreground-art/`):**
+  Drop custom skin images (such as retro arcade PCB circuit boards) into `foreground-art/`. The playfield displays this skin on all uncut areas; claiming territory peels it open to reveal the photo underneath!
 
 ---
 

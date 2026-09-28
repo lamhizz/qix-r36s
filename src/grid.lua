@@ -30,6 +30,8 @@ function Grid.new(width, height)
     self.imageData = love.image.newImageData(self.width, self.height)
     self.image = nil
     self.bgImage = nil
+    self.fgImage = nil
+    self.fgGridData = nil
 
     self.bfsVisited = {}
     self.bfsTag = 0
@@ -84,6 +86,82 @@ function Grid:loadBackground(artEntry)
     if img then
         self.bgImage = img
         self.bgImage:setFilter("linear", "linear")
+        self:updateAllPixels()
+        return true
+    end
+
+    self:updateAllPixels()
+    return false
+end
+
+function Grid:loadForeground(fgEntry)
+    if self.fgImage and self.fgImage.release then
+        pcall(function() self.fgImage:release() end)
+    end
+    self.fgImage = nil
+    self.fgGridData = nil
+
+    if not fgEntry then
+        self:updateAllPixels()
+        return false
+    end
+
+    local path = type(fgEntry) == "table" and fgEntry.path or fgEntry
+    local isExternal = (type(fgEntry) == "table" and fgEntry.isExternal) or
+                       (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
+
+    local imgData = nil
+
+    -- 1. If external file (SD card path), load via standard io and FileData
+    if isExternal then
+        local f = io.open(path, "rb")
+        if f then
+            local data = f:read("*all")
+            f:close()
+            local filename = path:match("([^/\\]+)$") or "fg.jpg"
+            local okData, fileData = pcall(love.filesystem.newFileData, data, filename)
+            if okData and fileData then
+                local okImg, loadedData = pcall(love.image.newImageData, fileData)
+                if okImg and loadedData then
+                    imgData = loadedData
+                end
+            end
+        end
+    end
+
+    -- 2. If not external or external load failed, load via love.filesystem
+    if not imgData and love.filesystem.getInfo(path) then
+        local okImg, loadedData = pcall(love.image.newImageData, path)
+        if okImg and loadedData then
+            imgData = loadedData
+        end
+    end
+
+    if imgData then
+        -- Map source image into a 355x251 grid buffer using proportional cover
+        local srcW = imgData:getWidth()
+        local srcH = imgData:getHeight()
+        local targetW = self.width
+        local targetH = self.height
+
+        local scale = math.max(targetW / srcW, targetH / srcH)
+        local drawW = srcW * scale
+        local drawH = srcH * scale
+        local offX = (drawW - targetW) * 0.5
+        local offY = (drawH - targetH) * 0.5
+
+        self.fgGridData = love.image.newImageData(targetW, targetH)
+        for gy = 0, targetH - 1 do
+            local sy = math.floor((gy + offY) / scale)
+            if sy < 0 then sy = 0 elseif sy >= srcH then sy = srcH - 1 end
+            for gx = 0, targetW - 1 do
+                local sx = math.floor((gx + offX) / scale)
+                if sx < 0 then sx = 0 elseif sx >= srcW then sx = srcW - 1 end
+                local r, g, b, a = imgData:getPixel(sx, sy)
+                self.fgGridData:setPixel(gx, gy, r, g, b, 1.0)
+            end
+        end
+
         self:updateAllPixels()
         return true
     end
@@ -431,8 +509,14 @@ function Grid:updatePixel(x, y, val)
     local r, g, b, a = 0, 0, 0, 1
 
     if val == CELL_EMPTY then
-        -- Deep dark arcade playfield mask
-        r, g, b, a = 0.02, 0.03, 0.06, 1.0
+        if self.fgGridData then
+            -- Foreground cover skin from foreground-art folder
+            r, g, b = self.fgGridData:getPixel(x, y)
+            a = 1.0
+        else
+            -- Deep dark arcade playfield mask fallback
+            r, g, b, a = 0.02, 0.03, 0.06, 1.0
+        end
 
     elseif val == CELL_BORDER then
         -- Vibrant electric neon cyan

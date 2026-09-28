@@ -16,4 +16,8 @@ src/art/*.png
 src/art/manifest.txt
 src/art/manifest.json
 src/art/index.php
-
+# Foreground Art Deck (ignore user-provided skins, keep circuit board default)
+foreground-art/*
+!foreground-art/qix-pcb.jpg
+src/foreground-art/*
+!src/foreground-art/qix-pcb.jpg

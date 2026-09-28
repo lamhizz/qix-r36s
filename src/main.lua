@@ -66,7 +66,19 @@ game = {
 
     -- Pause Menu
     pauseIndex = 1,
-    pauseItems = { "RESUME", "CRT SCANLINES", "AUDIO", "RESTART", "QUIT" },
+    pauseItems = {
+        { id = "RESUME",     type = "action",  label = "RESUME GAME" },
+        { id = "CRT_FILTER", type = "setting", label = "CRT SCANLINES" },
+        { id = "AUDIO",      type = "setting", label = "AUDIO SOUND" },
+        { id = "VOLUME",     type = "setting", label = "VOLUME" },
+        { id = "RESTART",    type = "action",  label = "RESTART GAME" },
+        { id = "QUIT",       type = "action",  label = "QUIT TO TITLE" }
+    },
+
+    -- Art Decks & Input Debouncing
+    artDeck = {},
+    foregroundDeck = {},
+    lastNavTime = 0,
 
     -- Input state
     input = {
@@ -117,6 +129,7 @@ function love.load()
 
     -- Scan art directory for dynamic image deck
     game:scanArtDeck()
+    game:scanForegroundDeck()
 
     -- Load high score if available
     local info = love.filesystem.getInfo("highscore.txt")
@@ -253,6 +266,72 @@ function game:scanArtDeck()
     end
 end
 
+function game:scanForegroundDeck()
+    self.foregroundDeck = {}
+
+    local function naturalSort(a, b)
+        local aName = type(a) == "table" and a.name or a
+        local bName = type(b) == "table" and b.name or b
+        local function pad(num) return string.format("%08d", tonumber(num)) end
+        local aKey = aName:lower():gsub("(%d+)", pad)
+        local bKey = bName:lower():gsub("(%d+)", pad)
+        return aKey < bKey
+    end
+
+    -- 1. Check external foreground-art directory on SD card (e.g. /roms/ports/qix/foreground-art/)
+    local base = love.filesystem.getSourceBaseDirectory()
+    local extFgDir = base and (base .. "/foreground-art")
+    local externalFiles = {}
+
+    if extFgDir then
+        local p = io.popen('ls -1 "' .. extFgDir .. '" 2>/dev/null')
+        if p then
+            for line in p:lines() do
+                local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
+                local lower = clean:lower()
+                if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                    table.insert(externalFiles, {
+                        path = extFgDir .. "/" .. clean,
+                        name = clean,
+                        isExternal = true
+                    })
+                end
+            end
+            p:close()
+        end
+    end
+
+    if #externalFiles > 0 then
+        table.sort(externalFiles, naturalSort)
+        self.foregroundDeck = externalFiles
+        print(string.format("Loaded %d custom foreground skins from external SD folder: %s", #self.foregroundDeck, extFgDir))
+        return
+    end
+
+    -- 2. Fall back to internal bundled foreground-art folder inside qix.love
+    local internalFiles = {}
+    if love.filesystem.getInfo("foreground-art") then
+        local files = love.filesystem.getDirectoryItems("foreground-art")
+        for _, file in ipairs(files) do
+            local lower = file:lower()
+            if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                table.insert(internalFiles, {
+                    path = "foreground-art/" .. file,
+                    name = file,
+                    isExternal = false
+                })
+            end
+        end
+    end
+
+    if #internalFiles > 0 then
+        table.sort(internalFiles, naturalSort)
+        self.foregroundDeck = internalFiles
+        print(string.format("Loaded %d foreground skins from bundled internal deck.", #self.foregroundDeck))
+        return
+    end
+end
+
 function game:saveHighScore()
     if self.score > self.highScore then
         self.highScore = self.score
@@ -296,6 +375,15 @@ function game:startLevel(levelNum)
         self.grid:loadBackground(chosenArt)
     else
         self.grid:loadBackground(nil)
+    end
+
+    -- Load foreground skin for uncovered playfield (rotates through foreground-art deck)
+    if #self.foregroundDeck > 0 then
+        local fgIndex = ((levelNum - 1) % #self.foregroundDeck) + 1
+        local chosenFg = self.foregroundDeck[fgIndex]
+        self.grid:loadForeground(chosenFg)
+    else
+        self.grid:loadForeground(nil)
     end
 
     -- Spawn Qix: Level 1-2 has 1 Qix; Level 3+ has 2 independent Qixes!
@@ -600,34 +688,147 @@ function game:updateInput()
     self.input.slowDraw = slowDraw
 end
 
+function game:navMenu(dir)
+    local now = love.timer.getTime()
+    if now - self.lastNavTime < 0.12 then
+        return
+    end
+    self.lastNavTime = now
+
+    if self.state == "TITLE" then
+        if dir == "up" then
+            self.titleIndex = (self.titleIndex > 1) and (self.titleIndex - 1) or #self.titleItems
+            Audio.play("tick")
+        elseif dir == "down" then
+            self.titleIndex = (self.titleIndex < #self.titleItems) and (self.titleIndex + 1) or 1
+            Audio.play("tick")
+        end
+    elseif self.state == "PAUSED" then
+        if dir == "up" then
+            self.pauseIndex = (self.pauseIndex > 1) and (self.pauseIndex - 1) or #self.pauseItems
+            Audio.play("tick")
+        elseif dir == "down" then
+            self.pauseIndex = (self.pauseIndex < #self.pauseItems) and (self.pauseIndex + 1) or 1
+            Audio.play("tick")
+        elseif dir == "left" then
+            self:adjustPauseSetting(-1)
+        elseif dir == "right" then
+            self:adjustPauseSetting(1)
+        end
+    end
+end
+
+function game:adjustPauseSetting(dir)
+    local item = self.pauseItems[self.pauseIndex]
+    if not item then return end
+
+    if item.id == "CRT_FILTER" then
+        self.crtFilter = not self.crtFilter
+        Audio.play("tick")
+    elseif item.id == "AUDIO" then
+        Audio.toggleMute()
+        Audio.play("tick")
+    elseif item.id == "VOLUME" then
+        local cur = math.floor(Audio.volume * 10 + 0.5)
+        cur = math.max(0, math.min(10, cur + dir))
+        Audio.volume = cur / 10
+        if Audio.volume > 0 and Audio.muted then
+            Audio.muted = false
+        end
+        Audio.play("tick")
+    end
+end
+
+function game:executePauseOption()
+    local item = self.pauseItems[self.pauseIndex]
+    if not item then return end
+
+    if item.id == "RESUME" then
+        self.state = "PLAYING"
+        Audio.play("tick")
+    elseif item.id == "CRT_FILTER" then
+        self.crtFilter = not self.crtFilter
+        Audio.play("tick")
+    elseif item.id == "AUDIO" then
+        Audio.toggleMute()
+        Audio.play("tick")
+    elseif item.id == "VOLUME" then
+        -- Cycle volume: 100% -> 75% -> 50% -> 25% -> 0% -> 100%
+        if Audio.volume >= 0.95 then
+            Audio.volume = 0.75
+        elseif Audio.volume >= 0.70 then
+            Audio.volume = 0.50
+        elseif Audio.volume >= 0.45 then
+            Audio.volume = 0.25
+        elseif Audio.volume >= 0.20 then
+            Audio.volume = 0.0
+            Audio.muted = true
+        else
+            Audio.volume = 1.0
+            Audio.muted = false
+        end
+        Audio.play("tick")
+    elseif item.id == "RESTART" then
+        Audio.play("start")
+        self:startNewGame()
+    elseif item.id == "QUIT" then
+        Audio.play("tick")
+        self.state = "TITLE"
+    end
+end
+
+function game:executeTitleOption()
+    local opt = self.titleItems[self.titleIndex]
+    if opt == "START" then
+        Audio.play("start")
+        self:startNewGame()
+    elseif opt == "HOW TO" then
+        Audio.play("tick")
+        self.state = "HOW_TO"
+    elseif opt == "QUIT" then
+        love.event.quit()
+    end
+end
+
 function love.gamepadpressed(joystick, button)
-    if game.state == "PLAYING" then
-        if button == "start" then
+    -- Global Start Button Toggle (never executes menu options)
+    if button == "start" then
+        if game.state == "PLAYING" then
             game.state = "PAUSED"
             game.pauseIndex = 1
             Audio.stopAll()
-        elseif button == "back" then
+            return
+        elseif game.state == "PAUSED" then
+            game.state = "PLAYING"
+            Audio.play("tick")
+            return
+        end
+    end
+
+    if game.state == "PLAYING" then
+        if button == "back" then
             Audio.toggleMute()
         end
     elseif game.state == "PAUSED" then
         if button == "dpup" then
-            game.pauseIndex = (game.pauseIndex > 1) and (game.pauseIndex - 1) or #game.pauseItems
-            Audio.play("tick")
+            game:navMenu("up")
         elseif button == "dpdown" then
-            game.pauseIndex = (game.pauseIndex < #game.pauseItems) and (game.pauseIndex + 1) or 1
-            Audio.play("tick")
-        elseif button == "a" or button == "start" then
+            game:navMenu("down")
+        elseif button == "dpleft" then
+            game:navMenu("left")
+        elseif button == "dpright" then
+            game:navMenu("right")
+        elseif button == "a" then
             game:executePauseOption()
-        elseif button == "b" then
+        elseif button == "b" or button == "back" then
             game.state = "PLAYING"
+            Audio.play("tick")
         end
     elseif game.state == "TITLE" then
         if button == "dpup" then
-            game.titleIndex = (game.titleIndex > 1) and (game.titleIndex - 1) or #game.titleItems
-            Audio.play("tick")
+            game:navMenu("up")
         elseif button == "dpdown" then
-            game.titleIndex = (game.titleIndex < #game.titleItems) and (game.titleIndex + 1) or 1
-            Audio.play("tick")
+            game:navMenu("down")
         elseif button == "a" or button == "start" then
             game:executeTitleOption()
         end
@@ -691,6 +892,20 @@ function love.mousepressed(x, y, button)
 end
 
 function love.keypressed(key)
+    -- Global pause toggle (Escape or P)
+    if key == "escape" or key == "p" then
+        if game.state == "PLAYING" then
+            game.state = "PAUSED"
+            game.pauseIndex = 1
+            Audio.stopAll()
+            return
+        elseif game.state == "PAUSED" then
+            game.state = "PLAYING"
+            Audio.play("tick")
+            return
+        end
+    end
+
     if game.state == "LEVEL_CLEAR" then
         if key == "a" or key == "return" or key == "space" then
             if game.clearPhase == "SCORES" then
@@ -701,11 +916,9 @@ function love.keypressed(key)
         end
     elseif game.state == "TITLE" then
         if key == "up" or key == "w" then
-            game.titleIndex = (game.titleIndex > 1) and (game.titleIndex - 1) or #game.titleItems
-            Audio.play("tick")
+            game:navMenu("up")
         elseif key == "down" or key == "s" then
-            game.titleIndex = (game.titleIndex < #game.titleItems) and (game.titleIndex + 1) or 1
-            Audio.play("tick")
+            game:navMenu("down")
         elseif key == "return" or key == "space" or key == "z" or key == "j" then
             game:executeTitleOption()
         elseif key == "escape" then
@@ -724,55 +937,20 @@ function love.keypressed(key)
             Audio.play("tick")
             game.state = "TITLE"
         end
-    elseif key == "escape" or key == "p" then
-        if game.state == "PLAYING" then
-            game.state = "PAUSED"
-            game.pauseIndex = 1
-            Audio.stopAll()
-        elseif game.state == "PAUSED" then
-            game.state = "PLAYING"
-        end
     elseif game.state == "PAUSED" then
         if key == "up" or key == "w" then
-            game.pauseIndex = (game.pauseIndex > 1) and (game.pauseIndex - 1) or #game.pauseItems
-            Audio.play("tick")
+            game:navMenu("up")
         elseif key == "down" or key == "s" then
-            game.pauseIndex = (game.pauseIndex < #game.pauseItems) and (game.pauseIndex + 1) or 1
-            Audio.play("tick")
-        elseif key == "return" or key == "space" then
+            game:navMenu("down")
+        elseif key == "left" or key == "a" then
+            game:navMenu("left")
+        elseif key == "right" or key == "d" then
+            game:navMenu("right")
+        elseif key == "return" or key == "space" or key == "z" then
             game:executePauseOption()
         end
     elseif key == "m" then
         Audio.toggleMute()
-    end
-end
-
-function game:executeTitleOption()
-    local opt = self.titleItems[self.titleIndex]
-    if opt == "START" then
-        Audio.play("start")
-        self:startNewGame()
-    elseif opt == "HOW TO" then
-        Audio.play("tick")
-        self.state = "HOW_TO"
-    elseif opt == "QUIT" then
-        love.event.quit()
-    end
-end
-
-function game:executePauseOption()
-    local opt = self.pauseItems[self.pauseIndex]
-    if opt == "RESUME" then
-        self.state = "PLAYING"
-    elseif opt == "CRT SCANLINES" then
-        self.crtFilter = not self.crtFilter
-        Audio.play("tick")
-    elseif opt == "AUDIO" then
-        Audio.toggleMute()
-    elseif opt == "RESTART" then
-        self:startNewGame()
-    elseif opt == "QUIT" then
-        love.event.quit()
     end
 end
 
@@ -1165,40 +1343,68 @@ end
 
 function game:drawPauseMenu()
     -- Dark translucent overlay
-    love.graphics.setColor(0, 0, 0, 0.85)
-    love.graphics.rectangle("fill", 130, 85, 380, 310, 8, 8)
+    love.graphics.setColor(0.02, 0.03, 0.07, 0.90)
+    love.graphics.rectangle("fill", 100, 60, 440, 360, 8, 8)
 
-    love.graphics.setColor(0.0, 0.85, 1.0, 1)
-    love.graphics.rectangle("line", 130, 85, 380, 310, 8, 8)
+    love.graphics.setColor(0.0, 0.85, 1.0, 0.9)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", 100, 60, 440, 360, 8, 8)
 
+    -- Header
     love.graphics.setColor(1, 0.85, 0.2, 1)
     love.graphics.setFont(game.fontMid)
-    love.graphics.printf("SYSTEM PAUSE", 130, 105, 380, "center")
+    love.graphics.printf("★ SYSTEM PAUSE ★", 100, 80, 440, "center")
+
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(0.0, 0.85, 1.0, 0.3)
+    love.graphics.line(130, 108, 510, 108)
 
     love.graphics.setFont(game.font)
     for i, item in ipairs(self.pauseItems) do
-        local label = item
-        if item == "CRT SCANLINES" then
-            label = "CRT FILTER: " .. (self.crtFilter and "ON" or "OFF")
-        elseif item == "AUDIO" then
-            label = "AUDIO: " .. (Audio.muted and "MUTED" or "ON")
+        local y = 126 + (i - 1) * 40
+        local isSelected = (i == self.pauseIndex)
+
+        if isSelected then
+            love.graphics.setColor(0.0, 0.7, 1.0, 0.22)
+            love.graphics.rectangle("fill", 115, y - 6, 410, 32, 6, 6)
+            love.graphics.setColor(0.0, 0.95, 1.0, 0.8)
+            love.graphics.rectangle("line", 115, y - 6, 410, 32, 6, 6)
         end
 
-        local y = 160 + (i - 1) * 38
-        if i == self.pauseIndex then
-            love.graphics.setColor(0.0, 0.8, 1.0, 0.3)
-            love.graphics.rectangle("fill", 150, y - 6, 340, 28, 4, 4)
-            love.graphics.setColor(1, 1, 0.2, 1)
-            love.graphics.printf("> " .. label .. " <", 130, y, 380, "center")
-        else
-            love.graphics.setColor(0.7, 0.7, 0.8, 1)
-            love.graphics.printf(label, 130, y, 380, "center")
+        local titleColor = isSelected and { 1, 1, 0.2, 1 } or { 0.75, 0.8, 0.9, 1 }
+        love.graphics.setColor(unpack(titleColor))
+        love.graphics.printf(item.label, 130, y + 2, 200, "left")
+
+        -- Right side value or prompt
+        if item.id == "CRT_FILTER" then
+            local valText = self.crtFilter and "ON" or "OFF"
+            local col = self.crtFilter and { 0.2, 1.0, 0.4, 1 } or { 0.6, 0.6, 0.6, 1 }
+            love.graphics.setColor(unpack(col))
+            local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
+            love.graphics.printf(display, 320, y + 2, 190, "right")
+        elseif item.id == "AUDIO" then
+            local valText = Audio.muted and "MUTED" or "ON"
+            local col = Audio.muted and { 1.0, 0.4, 0.4, 1 } or { 0.2, 1.0, 0.4, 1 }
+            love.graphics.setColor(unpack(col))
+            local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
+            love.graphics.printf(display, 320, y + 2, 190, "right")
+        elseif item.id == "VOLUME" then
+            local pct = math.floor(Audio.volume * 100 + 0.5)
+            love.graphics.setColor(0.3, 0.9, 1.0, 1)
+            local display = isSelected and string.format("◄ %3d%% ►", pct) or string.format("%3d%%", pct)
+            love.graphics.printf(display, 320, y + 2, 190, "right")
+        elseif item.id == "RESUME" then
+            love.graphics.setColor(0.3, 0.85, 1.0, isSelected and 1.0 or 0.6)
+            love.graphics.printf(isSelected and "[ PRESS A / START ]" or "", 300, y + 2, 210, "right")
+        elseif item.id == "RESTART" or item.id == "QUIT" then
+            love.graphics.setColor(1.0, 0.6, 0.2, isSelected and 1.0 or 0.6)
+            love.graphics.printf(isSelected and "[ PRESS A ]" or "", 300, y + 2, 210, "right")
         end
     end
 
     love.graphics.setFont(game.fontSmall)
-    love.graphics.setColor(0.4, 0.45, 0.55, 1)
-    love.graphics.printf("▲/▼ D-PAD: SELECT • (A): CHOOSE • START: RESUME", 130, 365, 380, "center")
+    love.graphics.setColor(0.5, 0.6, 0.7, 1)
+    love.graphics.printf("▲/▼: SELECT ROW   ◄/►: CHANGE VALUE   START: RESUME", 100, 385, 440, "center")
 end
 
 function game:drawLevelClear()
