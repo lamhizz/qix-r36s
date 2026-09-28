@@ -9,13 +9,58 @@ local Qix = require("qix")
 local Sparx = require("sparx")
 local Audio = require("audio")
 local Particles = require("particles")
+local Achievements = require("achievements")
+local Crystals = require("crystals")
 
 local COLOR_SLOW = {1, 0.45, 0.1}
 local COLOR_FAST = {0, 0.95, 1}
 local LIFE_DIAMOND = {0, 0, 0, 0, 0, 0, 0, 0}
 
+local DIFFICULTY_CONFIGS = {
+    CASUAL = {
+        name = "CASUAL",
+        lives = 4,
+        targetBase = 55,
+        targetStep = 2,
+        targetMax = 70,
+        speedMult = 0.82,
+        shieldDuration = 3.5,
+        fuseDelay = 0.90,
+        fuseBurnSpeed = 32,
+        sparxTimer = 36,
+        label = "CASUAL"
+    },
+    ARCADE = {
+        name = "ARCADE",
+        lives = 3,
+        targetBase = 65,
+        targetStep = 3,
+        targetMax = 80,
+        speedMult = 1.0,
+        shieldDuration = 2.5,
+        fuseDelay = 0.65,
+        fuseBurnSpeed = 42,
+        sparxTimer = 26,
+        label = "ARCADE"
+    },
+    MASTER = {
+        name = "MASTER",
+        lives = 2,
+        targetBase = 75,
+        targetStep = 3,
+        targetMax = 88,
+        speedMult = 1.22,
+        shieldDuration = 1.5,
+        fuseDelay = 0.35,
+        fuseBurnSpeed = 56,
+        sparxTimer = 16,
+        label = "MASTER"
+    }
+}
+local DIFFICULTY_ORDER = { "CASUAL", "ARCADE", "MASTER" }
+
 game = {
-    state = "TITLE", -- "TITLE", "PLAYING", "PAUSED", "LEVEL_CLEAR", "GAME_OVER"
+    state = "TITLE", -- "TITLE", "PLAYING", "PAUSED", "LEVEL_CLEAR", "GAME_OVER", "BADGES"
     score = 0,
     highScore = 10000,
     lives = 3,
@@ -23,11 +68,14 @@ game = {
     targetPercent = 75,
     sparxTimer = 35, -- Seconds before Sparx turn into Super Sparx
     timeInLevel = 0,
+    difficulty = "ARCADE",
 
     grid = nil,
     player = nil,
     qixList = {},
     sparxList = {},
+    crystals = {},
+    freezeTimer = 0,
 
     -- Display & Layout (Zoomed-out / smaller scale playfield)
     width = 640,
@@ -56,18 +104,20 @@ game = {
 
     -- Title Menu
     titleIndex = 1,
-    titleItems = { "START", "HOW TO", "QUIT" },
+    titleItems = { "START", "HOW TO", "BADGES", "QUIT" },
     titleAttractQix = nil,
     scoreMultiplier = 1,
     bestCutPercent = 0,
     totalCuts = 0,
     isNewRecord = false,
     sessionInitialHighScore = 0,
+    badgesScrollIndex = 1,
 
     -- Pause Menu
     pauseIndex = 1,
     pauseItems = {
         { id = "RESUME",     type = "action",  label = "RESUME GAME" },
+        { id = "DIFFICULTY", type = "setting", label = "DIFFICULTY" },
         { id = "CRT_FILTER", type = "setting", label = "CRT SCANLINES" },
         { id = "AUDIO",      type = "setting", label = "AUDIO SOUND" },
         { id = "VOLUME",     type = "setting", label = "VOLUME" },
@@ -78,6 +128,7 @@ game = {
     -- Art Decks & Input Debouncing
     artDeck = {},
     foregroundDeck = {},
+    lastArtIndex = nil,
     lastNavTime = 0,
 
     -- Input state
@@ -127,9 +178,23 @@ function love.load()
     game.player = Player.new(game.grid)
     game.titleAttractQix = Qix.new(game.grid, 177, 125, 0.75)
 
+    -- Initialize Achievements
+    Achievements.init()
+
     -- Scan art directory for dynamic image deck
     game:scanArtDeck()
     game:scanForegroundDeck()
+
+    -- Load settings (difficulty) if available
+    if love.filesystem.getInfo("settings.txt") then
+        local sdata = love.filesystem.read("settings.txt")
+        if sdata then
+            local diff = sdata:match("difficulty=([A-Z]+)")
+            if diff and DIFFICULTY_CONFIGS[diff] then
+                game.difficulty = diff
+            end
+        end
+    end
 
     -- Load high score if available
     local info = love.filesystem.getInfo("highscore.txt")
@@ -179,80 +244,99 @@ function game:scanArtDeck()
         return aKey < bKey
     end
 
-    -- 1. Check external art directory on physical disk / SD card (e.g. /roms/ports/qix/art/)
-    local base = love.filesystem.getSourceBaseDirectory()
-    local extArtDir = base and (base .. "/art")
-    local externalFiles = {}
+    local function scanDirFiles(dirPath, isExternal)
+        local found = {}
+        if not dirPath then return found end
 
-    if extArtDir then
-        -- Attempt 1: Scan external directory using io.popen (Linux/macOS)
-        local p = io.popen('ls -1 "' .. extArtDir .. '" 2>/dev/null')
-        if p then
-            for line in p:lines() do
-                local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
-                local lower = clean:lower()
-                if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
-                    table.insert(externalFiles, {
-                        path = extArtDir .. "/" .. clean,
-                        name = clean,
-                        isExternal = true
-                    })
-                end
-            end
-            p:close()
-        end
-
-        -- Attempt 2: Manifest file fallback if popen returned nothing
-        if #externalFiles == 0 then
-            local mf = io.open(extArtDir .. "/manifest.txt", "r")
-            if mf then
-                for line in mf:lines() do
+        if isExternal then
+            local p = io.popen('ls -1 "' .. dirPath .. '" 2>/dev/null')
+            if p then
+                for line in p:lines() do
                     local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
                     local lower = clean:lower()
                     if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
-                        local testF = io.open(extArtDir .. "/" .. clean, "rb")
-                        if testF then
-                            testF:close()
-                            table.insert(externalFiles, {
-                                path = extArtDir .. "/" .. clean,
-                                name = clean,
-                                isExternal = true
-                            })
-                        end
+                        table.insert(found, {
+                            path = dirPath .. "/" .. clean,
+                            name = clean,
+                            isExternal = true
+                        })
                     end
                 end
-                mf:close()
+                p:close()
+            end
+
+            -- Manifest file fallback if popen returned nothing
+            if #found == 0 then
+                local mf = io.open(dirPath .. "/manifest.txt", "r")
+                if mf then
+                    for line in mf:lines() do
+                        local clean = line:gsub("%s+$", ""):gsub("^%s+", "")
+                        local lower = clean:lower()
+                        if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                            local testF = io.open(dirPath .. "/" .. clean, "rb")
+                            if testF then
+                                testF:close()
+                                table.insert(found, {
+                                    path = dirPath .. "/" .. clean,
+                                    name = clean,
+                                    isExternal = true
+                                })
+                            end
+                        end
+                    end
+                    mf:close()
+                end
+            end
+        else
+            if love.filesystem.getInfo(dirPath) then
+                local files = love.filesystem.getDirectoryItems(dirPath)
+                for _, file in ipairs(files) do
+                    local lower = file:lower()
+                    if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
+                        table.insert(found, {
+                            path = dirPath .. "/" .. file,
+                            name = file,
+                            isExternal = false
+                        })
+                    end
+                end
+            end
+        end
+
+        return found
+    end
+
+    local collected = {}
+    local seen = {}
+    local function addFiles(list)
+        for _, item in ipairs(list) do
+            if not seen[item.name] then
+                seen[item.name] = true
+                table.insert(collected, item)
             end
         end
     end
 
-    if #externalFiles > 0 then
-        table.sort(externalFiles, naturalSort)
-        self.artDeck = externalFiles
-        print(string.format("Loaded %d custom photos from external art directory: %s", #self.artDeck, extArtDir))
-        return
-    end
+    local base = love.filesystem.getSourceBaseDirectory()
 
-    -- 2. Fall back to internal bundled art deck inside qix.love
-    local internalFiles = {}
-    if love.filesystem.getInfo("art") then
-        local files = love.filesystem.getDirectoryItems("art")
-        for _, file in ipairs(files) do
-            local lower = file:lower()
-            if lower:match("%.jpg$") or lower:match("%.jpeg$") or lower:match("%.png$") then
-                table.insert(internalFiles, {
-                    path = "art/" .. file,
-                    name = file,
-                    isExternal = false
-                })
-            end
-        end
+    -- 1. Scan external and local 'art_original' directories (master source photos)
+    if base then
+        addFiles(scanDirFiles(base .. "/art_original", true))
+        addFiles(scanDirFiles(base .. "/../art_original", true))
     end
+    addFiles(scanDirFiles("art_original", false))
 
-    if #internalFiles > 0 then
-        table.sort(internalFiles, naturalSort)
-        self.artDeck = internalFiles
-        print(string.format("Loaded %d background photos from bundled internal art deck.", #self.artDeck))
+    -- 2. Scan external and local 'art' directories
+    if base then
+        addFiles(scanDirFiles(base .. "/art", true))
+        addFiles(scanDirFiles(base .. "/../art", true))
+    end
+    addFiles(scanDirFiles("art", false))
+
+    if #collected > 0 then
+        table.sort(collected, naturalSort)
+        self.artDeck = collected
+        print(string.format("Loaded %d background photos for random pool (including art_original).", #self.artDeck))
         return
     end
 
@@ -339,24 +423,48 @@ function game:saveHighScore()
     end
 end
 
+function game:cycleDifficulty(dir)
+    local curIdx = 2
+    for i, d in ipairs(DIFFICULTY_ORDER) do
+        if d == self.difficulty then curIdx = i break end
+    end
+    curIdx = curIdx + dir
+    if curIdx < 1 then curIdx = #DIFFICULTY_ORDER end
+    if curIdx > #DIFFICULTY_ORDER then curIdx = 1 end
+    self.difficulty = DIFFICULTY_ORDER[curIdx]
+    self:saveSettings()
+    Audio.play("tick")
+end
+
+function game:saveSettings()
+    local str = string.format("difficulty=%s\n", self.difficulty)
+    love.filesystem.write("settings.txt", str)
+end
+
 function game:startNewGame()
+    local cfg = DIFFICULTY_CONFIGS[self.difficulty] or DIFFICULTY_CONFIGS.ARCADE
     self.sessionInitialHighScore = self.highScore
     self.score = 0
-    self.lives = 3
+    self.lives = cfg.lives
     self.level = 1
     self.scoreMultiplier = 1
     self.bestCutPercent = 0
     self.totalCuts = 0
     self.isNewRecord = false
+    self.freezeTimer = 0
     self:startLevel(1)
 end
 
 function game:startLevel(levelNum)
+    local cfg = DIFFICULTY_CONFIGS[self.difficulty] or DIFFICULTY_CONFIGS.ARCADE
     self.level = levelNum
     self.timeInLevel = 0
+    self.freezeTimer = 0
+    self.targetPercent = math.min(cfg.targetMax, cfg.targetBase + (levelNum - 1) * cfg.targetStep)
+
     -- Super Sparx introduced in later levels (Level 2+)
     self.superSparxEnabled = (levelNum >= 2)
-    self.sparxTimer = math.max(16, 40 - (levelNum * 4))
+    self.sparxTimer = math.max(12, cfg.sparxTimer - (levelNum * 2))
     self.superSparxAlerted = false
     self.floatingScores = {}
     self.bannerText = nil
@@ -365,14 +473,31 @@ function game:startLevel(levelNum)
     self.shakeDuration = 0
 
     self.grid:init()
-    self.player:reset()
+    self.player:reset(cfg)
     Particles.init()
 
-    -- Load background art for level uncover (rotates through art deck)
+    -- Spawn in-field tactical crystals for Level 4+
+    self.crystals = Crystals.spawnForLevel(self.grid, levelNum)
+
+    -- Achievement check: Veteran Survivor (Level 5+)
+    if levelNum >= 5 then
+        Achievements.unlock("veteran_survivor")
+    end
+
+    -- Load background art for level uncover (random each time, independent of level)
     if #self.artDeck > 0 then
-        local artIndex = ((levelNum - 1) % #self.artDeck) + 1
+        local artIndex = 1
+        if #self.artDeck > 1 then
+            repeat
+                artIndex = love.math.random(1, #self.artDeck)
+            until artIndex ~= self.lastArtIndex
+        end
+        self.lastArtIndex = artIndex
+
         local chosenArt = self.artDeck[artIndex]
         self.grid:loadBackground(chosenArt)
+        local artKey = type(chosenArt) == "table" and (chosenArt.name or chosenArt.path) or tostring(chosenArt)
+        Achievements.recordArtViewed(artKey)
     else
         self.grid:loadBackground(nil)
     end
@@ -388,7 +513,7 @@ function game:startLevel(levelNum)
 
     -- Spawn Qix: Level 1-2 has 1 Qix; Level 3+ has 2 independent Qixes!
     self.qixList = {}
-    local qixSpeed = 1.0 + (levelNum - 1) * 0.15
+    local qixSpeed = (1.0 + (levelNum - 1) * 0.15) * cfg.speedMult
     local q1 = Qix.new(self.grid, self.grid.width * 0.5, self.grid.height * 0.5, qixSpeed)
     table.insert(self.qixList, q1)
 
@@ -397,10 +522,10 @@ function game:startLevel(levelNum)
         table.insert(self.qixList, q2)
     end
 
-    -- Spawn 2 initial Sparx on opposite sides
+    -- Spawn 2 initial Sparx on opposite sides with difficulty speed multiplier
     self.sparxList = {
-        Sparx.new(self.grid, 0, 0, true, false),
-        Sparx.new(self.grid, self.grid.width - 1, 0, false, false)
+        Sparx.new(self.grid, 0, 0, true, false, cfg.speedMult),
+        Sparx.new(self.grid, self.grid.width - 1, 0, false, false, cfg.speedMult)
     }
 
     self.state = "PLAYING"
@@ -422,6 +547,43 @@ function game:onAreaCaptured(captureResult)
     self.totalCuts = (self.totalCuts or 0) + 1
     if captureResult.cutPercent > (self.bestCutPercent or 0) then
         self.bestCutPercent = captureResult.cutPercent
+    end
+
+    -- Achievements checks
+    if captureResult.isSlow and captureResult.cutPercent >= 20 then
+        Achievements.unlock("deep_cut")
+    end
+    if self.score >= 100000 then
+        Achievements.unlock("century_club")
+    end
+    if captureResult.percent >= 90 then
+        Achievements.unlock("master_artist")
+    end
+
+    -- Check crystal collection
+    if #self.crystals > 0 then
+        local collected = Crystals.checkCollection(self.crystals, self.grid)
+        for _, c in ipairs(collected) do
+            if c.type == "FREEZE" then
+                self.freezeTimer = 4.5
+                self.bannerText = "❄ CHRONO FREEZE! 4.5s TIME STOP! ❄"
+                self.bannerTimer = 2.5
+                Audio.play("bonus")
+            elseif c.type == "BONUS" then
+                local gemPts = 5000 * mult
+                self.score = self.score + gemPts
+                self:saveHighScore()
+                self.bannerText = string.format("★ STAR CACHE! +%d PTS! ★", gemPts)
+                self.bannerTimer = 2.2
+                Audio.play("bonus")
+            elseif c.type == "SHIELD" then
+                self.lives = math.min(6, self.lives + 1)
+                self.player.shieldTimer = math.max(self.player.shieldTimer, 5.0)
+                self.bannerText = "🛡 SHIELD MATRIX! +1 LIFE & BARRIER! 🛡"
+                self.bannerTimer = 2.5
+                Audio.play("bonus")
+            end
+        end
     end
 
     -- Spawn floating score popup at captured centroid (reusing static color tables)
@@ -454,9 +616,14 @@ function game:onAreaCaptured(captureResult)
         local splitBonus = 25000 * self.scoreMultiplier
         self.score = self.score + splitBonus
         self:saveHighScore()
+        Achievements.unlock("divide_conquer")
 
         self.bannerText = string.format("★ SPLIT-QIX! %dX MULTIPLIER UNLOCKED! ★", self.scoreMultiplier)
         self.bannerTimer = 3.5
+
+        if self.level == 1 then
+            Achievements.unlock("first_contact")
+        end
 
         self.state = "LEVEL_CLEAR"
         self.clearPhase = "SCORES"
@@ -468,7 +635,7 @@ function game:onAreaCaptured(captureResult)
     end
 
     -- Massive cut celebration banner
-    if captureResult.cutPercent >= 10 then
+    if captureResult.cutPercent >= 10 and (not self.bannerTimer or self.bannerTimer <= 0) then
         self.bannerText = string.format("⚡ MASSIVE CUT! +%d PTS ⚡", cutPts)
         self.bannerTimer = 2.0
     end
@@ -480,8 +647,12 @@ function game:onAreaCaptured(captureResult)
         self.nearTargetAlerted = true
     end
 
-    -- Check level clear threshold (75%)
+    -- Check level clear threshold
     if captureResult.percent >= self.targetPercent then
+        if self.level == 1 then
+            Achievements.unlock("first_contact")
+        end
+
         self.state = "LEVEL_CLEAR"
         self.clearPhase = "SCORES"
         self.clearTimer = 2.5 -- Show score card briefly, then transition to pure artwork showcase
@@ -523,6 +694,7 @@ function love.update(dt)
     -- Poll gamepad / keyboard input
     game:updateInput()
     Particles.update(dt)
+    Achievements.update(dt)
 
     -- Screen shake decay
     if game.shakeDuration > 0 then
@@ -559,6 +731,11 @@ function love.update(dt)
     elseif game.state == "PLAYING" then
         game.timeInLevel = game.timeInLevel + dt
 
+        if game.freezeTimer > 0 then
+            game.freezeTimer = game.freezeTimer - dt
+        end
+        Crystals.updateList(game.crystals, dt)
+
         -- Mutate Sparx to Super Sparx when level timer runs out (Later levels: Level 2+)
         if game.superSparxEnabled and game.timeInLevel >= game.sparxTimer then
             local justMutated = false
@@ -583,22 +760,23 @@ function love.update(dt)
             game.offsetX, game.offsetY, game.scaleX, game.scaleY
         )
 
-        -- Update Qix entities
-        for _, qix in ipairs(game.qixList) do
-            qix:update(dt)
-            -- Check collision with player's active stix line
-            if game.player:isDrawing() and qix:checkStixCollision(game.player.stixPath) then
-                game:onPlayerDeath("qix")
-                break
+        -- Update Qix entities and Sparx enemies (frozen while Chrono Freeze is active)
+        if game.freezeTimer <= 0 then
+            for _, qix in ipairs(game.qixList) do
+                qix:update(dt)
+                -- Check collision with player's active stix line
+                if game.player:isDrawing() and qix:checkStixCollision(game.player.stixPath) then
+                    game:onPlayerDeath("qix")
+                    break
+                end
             end
-        end
 
-        -- Update Sparx enemies
-        for _, spx in ipairs(game.sparxList) do
-            spx:update(dt, game.player)
-            if spx:checkPlayerCollision(game.player) then
-                game:onPlayerDeath("sparx")
-                break
+            for _, spx in ipairs(game.sparxList) do
+                spx:update(dt, game.player)
+                if spx:checkPlayerCollision(game.player) then
+                    game:onPlayerDeath("sparx")
+                    break
+                end
             end
         end
 
@@ -606,11 +784,13 @@ function love.update(dt)
         game.deathTimer = game.deathTimer - dt
         if game.deathTimer <= 0 then
             if game.lives > 0 then
+                local cfg = DIFFICULTY_CONFIGS[game.difficulty] or DIFFICULTY_CONFIGS.ARCADE
                 game.player:respawn()
+                game.player:applyDifficulty(cfg)
                 -- Reset Sparx to opposite top corners so player has safe breathing room
                 game.sparxList = {
-                    Sparx.new(game.grid, 0, 0, true, false),
-                    Sparx.new(game.grid, game.grid.width - 1, 0, false, false)
+                    Sparx.new(game.grid, 0, 0, true, false, cfg.speedMult),
+                    Sparx.new(game.grid, game.grid.width - 1, 0, false, false, cfg.speedMult)
                 }
                 game.bannerText = "⚡ SAFE SHIELD ACTIVE ⚡"
                 game.bannerTimer = 1.8
@@ -702,6 +882,18 @@ function game:navMenu(dir)
         elseif dir == "down" then
             self.titleIndex = (self.titleIndex < #self.titleItems) and (self.titleIndex + 1) or 1
             Audio.play("tick")
+        elseif dir == "left" then
+            self:cycleDifficulty(-1)
+        elseif dir == "right" then
+            self:cycleDifficulty(1)
+        end
+    elseif self.state == "BADGES" then
+        if dir == "up" then
+            self.badgesScrollIndex = math.max(1, self.badgesScrollIndex - 1)
+            Audio.play("tick")
+        elseif dir == "down" then
+            self.badgesScrollIndex = math.min(#Achievements.DATA, self.badgesScrollIndex + 1)
+            Audio.play("tick")
         end
     elseif self.state == "PAUSED" then
         if dir == "up" then
@@ -722,7 +914,11 @@ function game:adjustPauseSetting(dir)
     local item = self.pauseItems[self.pauseIndex]
     if not item then return end
 
-    if item.id == "CRT_FILTER" then
+    if item.id == "DIFFICULTY" then
+        self:cycleDifficulty(dir)
+        local cfg = DIFFICULTY_CONFIGS[self.difficulty]
+        if self.player then self.player:applyDifficulty(cfg) end
+    elseif item.id == "CRT_FILTER" then
         self.crtFilter = not self.crtFilter
         Audio.play("tick")
     elseif item.id == "AUDIO" then
@@ -746,6 +942,10 @@ function game:executePauseOption()
     if item.id == "RESUME" then
         self.state = "PLAYING"
         Audio.play("tick")
+    elseif item.id == "DIFFICULTY" then
+        self:cycleDifficulty(1)
+        local cfg = DIFFICULTY_CONFIGS[self.difficulty]
+        if self.player then self.player:applyDifficulty(cfg) end
     elseif item.id == "CRT_FILTER" then
         self.crtFilter = not self.crtFilter
         Audio.play("tick")
@@ -785,6 +985,10 @@ function game:executeTitleOption()
     elseif opt == "HOW TO" then
         Audio.play("tick")
         self.state = "HOW_TO"
+    elseif opt == "BADGES" then
+        Audio.play("tick")
+        self.badgesScrollIndex = 1
+        self.state = "BADGES"
     elseif opt == "QUIT" then
         love.event.quit()
     end
@@ -829,8 +1033,21 @@ function love.gamepadpressed(joystick, button)
             game:navMenu("up")
         elseif button == "dpdown" then
             game:navMenu("down")
+        elseif button == "dpleft" then
+            game:navMenu("left")
+        elseif button == "dpright" then
+            game:navMenu("right")
         elseif button == "a" or button == "start" then
             game:executeTitleOption()
+        end
+    elseif game.state == "BADGES" then
+        if button == "dpup" then
+            game:navMenu("up")
+        elseif button == "dpdown" then
+            game:navMenu("down")
+        elseif button == "a" or button == "b" or button == "start" or button == "back" then
+            game.state = "TITLE"
+            Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
         if button == "a" or button == "b" or button == "start" or button == "back" then
@@ -872,10 +1089,10 @@ function love.mousepressed(x, y, button)
             game:startLevel(game.level + 1)
         end
     elseif game.state == "TITLE" then
-        local startY = 228
+        local startY = 195
         local btnW = 260
-        local btnHeight = 40
-        local spacing = 14
+        local btnHeight = 36
+        local spacing = 10
         local btnX = math.floor((640 - btnW) * 0.5)
         for i = 1, #game.titleItems do
             local by = startY + (i - 1) * (btnHeight + spacing)
@@ -885,7 +1102,7 @@ function love.mousepressed(x, y, button)
                 return
             end
         end
-    elseif game.state == "HOW_TO" then
+    elseif game.state == "HOW_TO" or game.state == "BADGES" then
         game.state = "TITLE"
         Audio.play("tick")
     end
@@ -919,10 +1136,23 @@ function love.keypressed(key)
             game:navMenu("up")
         elseif key == "down" or key == "s" then
             game:navMenu("down")
+        elseif key == "left" or key == "a" then
+            game:navMenu("left")
+        elseif key == "right" or key == "d" then
+            game:navMenu("right")
         elseif key == "return" or key == "space" or key == "z" or key == "j" then
             game:executeTitleOption()
         elseif key == "escape" then
             love.event.quit()
+        end
+    elseif game.state == "BADGES" then
+        if key == "up" or key == "w" then
+            game:navMenu("up")
+        elseif key == "down" or key == "s" then
+            game:navMenu("down")
+        elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
+            game.state = "TITLE"
+            Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
         if key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
@@ -973,6 +1203,8 @@ function love.draw()
         game:drawTitle()
     elseif game.state == "HOW_TO" then
         game:drawHowTo()
+    elseif game.state == "BADGES" then
+        game:drawBadgesGallery()
     elseif game.state == "LEVEL_CLEAR" then
         -- During Level Clear: Unveil 100% full artwork unobstructed in FIT mode!
         game:drawLevelClear()
@@ -982,6 +1214,21 @@ function love.draw()
 
         -- Draw Playfield Grid (uncovering background image)
         game.grid:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+
+        -- Draw Floating Power Crystals (Level 4+)
+        if #game.crystals > 0 then
+            Crystals.drawList(game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        end
+
+        -- Active Chrono Freeze Visual Overlay
+        if game.freezeTimer > 0 then
+            local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 8)
+            love.graphics.setColor(0.1, 0.85, 1.0, 0.10 + 0.08 * pulse)
+            love.graphics.rectangle("fill", game.offsetX, game.offsetY, game.grid.width * game.scaleX, game.grid.height * game.scaleY)
+            love.graphics.setColor(0.2, 0.95, 1.0, 0.9)
+            love.graphics.setFont(game.fontSmall)
+            love.graphics.print(string.format("❄ FREEZE TIME: %0.1fs", game.freezeTimer), game.offsetX + 8, game.offsetY + 8)
+        end
 
         -- Draw Qix Entities
         for _, qix in ipairs(game.qixList) do
@@ -1028,6 +1275,9 @@ function love.draw()
             game:drawGameOver()
         end
     end
+
+    -- Persistent Achievement Unlock Notifications
+    Achievements.drawToasts(game.fontMid, game.fontSmall)
 
     love.graphics.pop()
 
@@ -1196,11 +1446,11 @@ function game:drawTitle()
     love.graphics.setColor(0.55, 0.65, 0.78, 0.9)
     love.graphics.printf("PORTMASTER RK3326 HANDHELD", 0, titleY + 80, 640, "center")
 
-    -- 4. Vertically Centered Menu Buttons ("START", "HOW TO", "QUIT")
-    local startY = 228
+    -- 4. Vertically Centered Menu Buttons ("START", "HOW TO", "BADGES", "QUIT")
+    local startY = 186
     local btnW = 260
-    local btnH = 40
-    local spacing = 14
+    local btnH = 34
+    local spacing = 10
     local btnX = math.floor((640 - btnW) * 0.5)
 
     for i, item in ipairs(self.titleItems) do
@@ -1222,12 +1472,12 @@ function game:drawTitle()
             -- Animated neon pointers
             love.graphics.setFont(game.fontMid)
             love.graphics.setColor(1.0, 0.85, 0.15, 1.0)
-            love.graphics.print(">", btnX + 16, by + 11)
-            love.graphics.print("<", btnX + btnW - 28, by + 11)
+            love.graphics.print(">", btnX + 16, by + 8)
+            love.graphics.print("<", btnX + btnW - 28, by + 8)
 
             -- Selected Button Label
             love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-            love.graphics.printf(item, btnX, by + 11, btnW, "center")
+            love.graphics.printf(item, btnX, by + 8, btnW, "center")
         else
             -- Clean translucent card
             love.graphics.setColor(0.05, 0.07, 0.13, 0.75)
@@ -1240,21 +1490,46 @@ function game:drawTitle()
             -- Unselected Button Label
             love.graphics.setFont(game.fontMid)
             love.graphics.setColor(0.65, 0.72, 0.84, 0.9)
-            love.graphics.printf(item, btnX, by + 11, btnW, "center")
+            love.graphics.printf(item, btnX, by + 8, btnW, "center")
         end
     end
 
-    -- 5. Footer Controls Legend
+    -- 5. Interactive Difficulty Preset Bar
+    local diffColors = {
+        CASUAL = { 0.2, 1.0, 0.4 },
+        ARCADE = { 0.0, 0.95, 1.0 },
+        MASTER = { 1.0, 0.35, 0.35 }
+    }
+    local diffSubtitles = {
+        CASUAL = "4 LIVES  •  55% GOAL  •  SLOWER SPARX",
+        ARCADE = "3 LIVES  •  65% GOAL  •  STANDARD ARCADE",
+        MASTER = "2 LIVES  •  75% GOAL  •  TURBO ENEMIES"
+    }
+    local curCol = diffColors[self.difficulty] or { 0.0, 0.95, 1.0 }
+
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.setColor(0.60, 0.70, 0.85, 0.9)
+    love.graphics.printf("DIFFICULTY PRESET", 0, 366, 640, "center")
+
+    love.graphics.setFont(game.fontMid)
+    love.graphics.setColor(curCol[1], curCol[2], curCol[3], 1.0)
+    love.graphics.printf(string.format("◄ [  %s  ] ►", self.difficulty), 0, 382, 640, "center")
+
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.setColor(0.50, 0.60, 0.72, 0.85)
+    love.graphics.printf(diffSubtitles[self.difficulty] or "", 0, 402, 640, "center")
+
+    -- 6. Footer Controls Legend
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.25)
-    love.graphics.line(120, 420, 520, 420)
+    love.graphics.line(100, 420, 540, 420)
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.0, 0.95, 1.0, 0.9)
-    love.graphics.printf("▲/▼ D-PAD: SELECT    •    (A) / START: CONFIRM", 0, 434, 640, "center")
+    love.graphics.printf("▲/▼: SELECT   •   ◄/►: DIFFICULTY   •   (A)/START: CONFIRM", 0, 432, 640, "center")
 
     love.graphics.setColor(0.45, 0.52, 0.62, 0.85)
-    love.graphics.printf("KEYBOARD: ARROWS/WASD + ENTER/SPACE  •  QUIT: ESC", 0, 454, 640, "center")
+    love.graphics.printf("KEYBOARD: ARROWS/WASD + ENTER/SPACE  •  QUIT: ESC", 0, 452, 640, "center")
 end
 
 function game:drawHowTo()
@@ -1341,70 +1616,202 @@ function game:drawHowTo()
     love.graphics.printf("PRESS (B) OR (A) TO RETURN TO MAIN MENU", mx, my + 396, mw, "center")
 end
 
+function game:drawBadgesGallery()
+    -- 1. Pre-rendered cyber grid background
+    if game.titleGridCanvas then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(game.titleGridCanvas, 0, 0)
+    end
+
+    -- Dark backdrop overlay
+    love.graphics.setColor(0.02, 0.03, 0.05, 0.88)
+    love.graphics.rectangle("fill", 0, 0, 640, 480)
+
+    -- Badges Modal Box
+    local mx, my, mw, mh = 28, 16, 584, 448
+    love.graphics.setColor(0.04, 0.06, 0.11, 0.95)
+    love.graphics.rectangle("fill", mx, my, mw, mh, 8, 8)
+
+    love.graphics.setLineWidth(2)
+    love.graphics.setColor(1.0, 0.85, 0.2, 0.9)
+    love.graphics.rectangle("line", mx, my, mw, mh, 8, 8)
+
+    -- Header
+    love.graphics.setFont(game.fontMid)
+    love.graphics.setColor(1.0, 0.88, 0.2, 1.0)
+    love.graphics.printf("★ ACHIEVEMENTS & MEDALS ★", mx, my + 10, mw, "center")
+
+    -- Unlocked count & mini progress bar
+    local unlockedCount = Achievements.getUnlockedCount()
+    local totalBadges = #Achievements.DATA
+    local pct = math.floor((unlockedCount / totalBadges) * 100)
+
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
+    love.graphics.printf(string.format("UNLOCKED: %d / %d MEDALS (%d%%)", unlockedCount, totalBadges, pct), mx, my + 30, mw, "center")
+
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
+    love.graphics.line(mx + 20, my + 46, mx + mw - 20, my + 46)
+
+    -- 7 Badge Cards
+    local cardStartY = my + 52
+    local cardH = 46
+    local cardSpacing = 6
+    local cardW = mw - 32
+    local cardX = mx + 16
+
+    for i, badge in ipairs(Achievements.DATA) do
+        local cy = cardStartY + (i - 1) * (cardH + cardSpacing)
+        local isSelected = (i == self.badgesScrollIndex)
+        local isUnlocked = badge.unlocked
+
+        -- Card Background
+        if isUnlocked then
+            love.graphics.setColor(0.06, 0.12, 0.18, 0.85)
+        else
+            love.graphics.setColor(0.04, 0.05, 0.08, 0.70)
+        end
+        love.graphics.rectangle("fill", cardX, cy, cardW, cardH, 4, 4)
+
+        -- Border
+        love.graphics.setLineWidth(isSelected and 2 or 1)
+        if isSelected then
+            local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 6)
+            love.graphics.setColor(0.0, 0.95, 1.0, 0.7 + 0.3 * pulse)
+        elseif isUnlocked then
+            love.graphics.setColor(1.0, 0.82, 0.15, 0.65)
+        else
+            love.graphics.setColor(0.25, 0.30, 0.40, 0.40)
+        end
+        love.graphics.rectangle("line", cardX, cy, cardW, cardH, 4, 4)
+
+        -- Badge Tag Pill (Left)
+        local tagW = 104
+        local tagH = 26
+        local tagX = cardX + 8
+        local tagY = cy + 10
+
+        if isUnlocked then
+            love.graphics.setColor(1.0, 0.80, 0.15, 0.22)
+            love.graphics.rectangle("fill", tagX, tagY, tagW, tagH, 3, 3)
+            love.graphics.setColor(1.0, 0.85, 0.2, 0.9)
+            love.graphics.rectangle("line", tagX, tagY, tagW, tagH, 3, 3)
+
+            love.graphics.setFont(game.fontSmall)
+            love.graphics.setColor(1.0, 0.9, 0.2, 1.0)
+            love.graphics.printf(badge.badge or "MEDAL", tagX, tagY + 8, tagW, "center")
+        else
+            love.graphics.setColor(0.12, 0.14, 0.18, 0.6)
+            love.graphics.rectangle("fill", tagX, tagY, tagW, tagH, 3, 3)
+            love.graphics.setColor(0.35, 0.40, 0.50, 0.5)
+            love.graphics.rectangle("line", tagX, tagY, tagW, tagH, 3, 3)
+
+            love.graphics.setFont(game.fontSmall)
+            love.graphics.setColor(0.50, 0.55, 0.65, 0.8)
+            love.graphics.printf("[LOCKED]", tagX, tagY + 8, tagW, "center")
+        end
+
+        -- Title & Description
+        local textX = tagX + tagW + 12
+        love.graphics.setFont(game.font)
+        if isUnlocked then
+            love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
+        else
+            love.graphics.setColor(0.60, 0.65, 0.75, 0.7)
+        end
+        love.graphics.print(badge.title, textX, cy + 8)
+
+        love.graphics.setFont(game.fontSmall)
+        if isUnlocked then
+            love.graphics.setColor(0.2, 1.0, 0.45, 0.95)
+        else
+            love.graphics.setColor(0.45, 0.50, 0.60, 0.75)
+        end
+        love.graphics.print(badge.desc, textX, cy + 26)
+    end
+
+    -- Footer Prompt
+    local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 4)
+    love.graphics.setColor(0.2, 1.0, 0.4, 0.7 + 0.3 * pulse)
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.printf("▲/▼: SCROLL   •   PRESS (B) OR (A) TO RETURN TO MAIN MENU", mx, my + mh - 20, mw, "center")
+end
+
 function game:drawPauseMenu()
     -- Dark translucent overlay
-    love.graphics.setColor(0.02, 0.03, 0.07, 0.90)
-    love.graphics.rectangle("fill", 100, 60, 440, 360, 8, 8)
+    love.graphics.setColor(0.02, 0.03, 0.07, 0.92)
+    love.graphics.rectangle("fill", 95, 34, 450, 412, 8, 8)
 
     love.graphics.setColor(0.0, 0.85, 1.0, 0.9)
     love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", 100, 60, 440, 360, 8, 8)
+    love.graphics.rectangle("line", 95, 34, 450, 412, 8, 8)
 
     -- Header
     love.graphics.setColor(1, 0.85, 0.2, 1)
     love.graphics.setFont(game.fontMid)
-    love.graphics.printf("★ SYSTEM PAUSE ★", 100, 80, 440, "center")
+    love.graphics.printf("★ SYSTEM PAUSE ★", 95, 48, 450, "center")
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.3)
-    love.graphics.line(130, 108, 510, 108)
+    love.graphics.line(125, 74, 515, 74)
 
     love.graphics.setFont(game.font)
     for i, item in ipairs(self.pauseItems) do
-        local y = 126 + (i - 1) * 40
+        local y = 88 + (i - 1) * 42
         local isSelected = (i == self.pauseIndex)
 
         if isSelected then
             love.graphics.setColor(0.0, 0.7, 1.0, 0.22)
-            love.graphics.rectangle("fill", 115, y - 6, 410, 32, 6, 6)
+            love.graphics.rectangle("fill", 110, y - 5, 420, 32, 6, 6)
             love.graphics.setColor(0.0, 0.95, 1.0, 0.8)
-            love.graphics.rectangle("line", 115, y - 6, 410, 32, 6, 6)
+            love.graphics.rectangle("line", 110, y - 5, 420, 32, 6, 6)
         end
 
         local titleColor = isSelected and { 1, 1, 0.2, 1 } or { 0.75, 0.8, 0.9, 1 }
         love.graphics.setColor(unpack(titleColor))
-        love.graphics.printf(item.label, 130, y + 2, 200, "left")
+        love.graphics.printf(item.label, 125, y + 3, 200, "left")
 
         -- Right side value or prompt
-        if item.id == "CRT_FILTER" then
+        if item.id == "DIFFICULTY" then
+            local diffColors = {
+                CASUAL = { 0.2, 1.0, 0.4, 1 },
+                ARCADE = { 0.0, 0.95, 1.0, 1 },
+                MASTER = { 1.0, 0.35, 0.35, 1 }
+            }
+            local col = diffColors[self.difficulty] or { 0.0, 0.95, 1.0, 1 }
+            love.graphics.setColor(unpack(col))
+            local display = isSelected and string.format("◄ [ %s ] ►", self.difficulty) or string.format("[ %s ]", self.difficulty)
+            love.graphics.printf(display, 310, y + 3, 200, "right")
+        elseif item.id == "CRT_FILTER" then
             local valText = self.crtFilter and "ON" or "OFF"
             local col = self.crtFilter and { 0.2, 1.0, 0.4, 1 } or { 0.6, 0.6, 0.6, 1 }
             love.graphics.setColor(unpack(col))
             local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
-            love.graphics.printf(display, 320, y + 2, 190, "right")
+            love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "AUDIO" then
             local valText = Audio.muted and "MUTED" or "ON"
             local col = Audio.muted and { 1.0, 0.4, 0.4, 1 } or { 0.2, 1.0, 0.4, 1 }
             love.graphics.setColor(unpack(col))
             local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
-            love.graphics.printf(display, 320, y + 2, 190, "right")
+            love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "VOLUME" then
             local pct = math.floor(Audio.volume * 100 + 0.5)
             love.graphics.setColor(0.3, 0.9, 1.0, 1)
             local display = isSelected and string.format("◄ %3d%% ►", pct) or string.format("%3d%%", pct)
-            love.graphics.printf(display, 320, y + 2, 190, "right")
+            love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "RESUME" then
             love.graphics.setColor(0.3, 0.85, 1.0, isSelected and 1.0 or 0.6)
-            love.graphics.printf(isSelected and "[ PRESS A / START ]" or "", 300, y + 2, 210, "right")
+            love.graphics.printf(isSelected and "[ PRESS A / START ]" or "", 300, y + 3, 210, "right")
         elseif item.id == "RESTART" or item.id == "QUIT" then
             love.graphics.setColor(1.0, 0.6, 0.2, isSelected and 1.0 or 0.6)
-            love.graphics.printf(isSelected and "[ PRESS A ]" or "", 300, y + 2, 210, "right")
+            love.graphics.printf(isSelected and "[ PRESS A ]" or "", 300, y + 3, 210, "right")
         end
     end
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.5, 0.6, 0.7, 1)
-    love.graphics.printf("▲/▼: SELECT ROW   ◄/►: CHANGE VALUE   START: RESUME", 100, 385, 440, "center")
+    love.graphics.printf("▲/▼: SELECT ROW   ◄/►: CHANGE VALUE   START: RESUME", 95, 396, 450, "center")
 end
 
 function game:drawLevelClear()

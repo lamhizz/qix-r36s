@@ -16,13 +16,14 @@ local STAR_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 local STAR_POLYGON_OUTER = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 local STAR_POLYGON_CROSS = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 
-function Sparx.new(grid, x, y, isClockwise, isSuper)
+function Sparx.new(grid, x, y, isClockwise, isSuper, speedMultiplier)
     local self = setmetatable({}, Sparx)
     self.grid = grid
     self.x = x or 0
     self.y = y or 0
     self.isClockwise = (isClockwise == nil) and true or isClockwise
     self.isSuper = isSuper or false
+    self.speedMultiplier = speedMultiplier or 1.0
 
     self.dir = self.isClockwise and 0 or 2 -- 0: Right, 1: Down, 2: Left, 3: Up
     self.stepAccumulator = 0
@@ -40,7 +41,7 @@ end
 function Sparx:update(dt, player)
     self.sparkAngle = self.sparkAngle + dt * 10
 
-    local stepsPerSec = self.isSuper and 75 or 54
+    local stepsPerSec = (self.isSuper and 75 or 54) * (self.speedMultiplier or 1.0)
     self.stepAccumulator = self.stepAccumulator + stepsPerSec * dt
 
     while self.stepAccumulator >= 1.0 do

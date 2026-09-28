@@ -46,6 +46,9 @@ cp "$PORT_DIR/screenshot.png" "$BUILD_DIR/$PACKAGE_NAME/"
 # Copy game package and loose art/fonts for easy user customization on SD card
 cp "qix.love" "$BUILD_DIR/$PACKAGE_NAME/"
 cp -r "$SRC_DIR/art" "$BUILD_DIR/$PACKAGE_NAME/"
+if [ -d "art_original" ]; then
+    cp -r "art_original" "$BUILD_DIR/$PACKAGE_NAME/"
+fi
 cp -r "$SRC_DIR/foreground-art" "$BUILD_DIR/$PACKAGE_NAME/"
 cp -r "$SRC_DIR/fonts" "$BUILD_DIR/$PACKAGE_NAME/"
 

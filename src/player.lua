@@ -20,7 +20,7 @@ function Player.new(grid)
     return self
 end
 
-function Player:reset()
+function Player:reset(cfg)
     self.x = math.floor(self.grid.width / 2)
     self.y = self.grid.height - 1
     self.state = STATE_BORDER
@@ -42,6 +42,20 @@ function Player:reset()
 
     self.moveAccumulator = 0
     self.animTime = 0
+
+    self.usedFastThisLevel = false
+
+    if cfg then
+        self:applyDifficulty(cfg)
+    end
+end
+
+function Player:applyDifficulty(cfg)
+    if not cfg then return end
+    self.shieldDuration = cfg.shieldDuration or 2.5
+    self.shieldTimer = self.shieldDuration
+    self.fuseDelay = cfg.fuseDelay or 0.75
+    self.fuseBurnSpeed = cfg.fuseBurnSpeed or 42
 end
 
 function Player:respawn()
@@ -180,6 +194,9 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
         if nextCell == self.grid.CELL_EMPTY and wantsDraw then
             self.state = STATE_DRAWING
             self.isSlow = isSlowKey
+            if not isSlowKey then
+                self.usedFastThisLevel = true
+            end
             self.shieldTimer = 0
             self.drawOrigin = { x = self.x, y = self.y }
             self.stixPath = { { x = self.x, y = self.y } }
