@@ -700,7 +700,7 @@ function game:onAreaCaptured(captureResult)
     end
 end
 
-function game:onPlayerDeath(reason)
+function game:onPlayerDeath(reason, hitGridX, hitGridY)
     Audio.stopAll()
     Audio.play("death")
     self.state = "DEAD"
@@ -710,14 +710,17 @@ function game:onPlayerDeath(reason)
     Logger.info("GAME", "Player lost life (%s). Remaining lives: %d | Level: %d | Score: %d",
         reason or "unknown", self.lives, self.level, self.score)
 
-    -- Vector diamond fragment burst
+    -- Fiery arcade explosion burst (incandescent white-gold, blazing yellow, fire orange, deep crimson)
     local px = self.offsetX + self.player.x * self.scaleX
     local py = self.offsetY + self.player.y * self.scaleY
-    Particles.spawnDeathBurst(px, py)
+    local hx = hitGridX and (self.offsetX + hitGridX * self.scaleX) or nil
+    local hy = hitGridY and (self.offsetY + hitGridY * self.scaleY) or nil
 
-    -- Screen shake impact
-    self.shakeDuration = 0.35
-    self.shakeIntensity = 6
+    Particles.spawnDeathBurst(px, py, hx, hy, self.player.stixPath, self.offsetX, self.offsetY, self.scaleX, self.scaleY)
+
+    -- Screen shake impact (enhanced for heavy explosion punch)
+    self.shakeDuration = 0.40
+    self.shakeIntensity = 8
 end
 
 function love.update(dt)
@@ -830,8 +833,9 @@ function love.update(dt)
             for _, qix in ipairs(game.qixList) do
                 qix:update(dt)
                 -- Check collision with player's active stix line
-                if game.player:isDrawing() and qix:checkStixCollision(game.player.stixPath) then
-                    game:onPlayerDeath("qix")
+                local hit, hx, hy = qix:checkStixCollision(game.player.stixPath)
+                if game.player:isDrawing() and hit then
+                    game:onPlayerDeath("qix", hx, hy)
                     break
                 end
             end
@@ -839,7 +843,7 @@ function love.update(dt)
             for _, spx in ipairs(game.sparxList) do
                 spx:update(dt, game.player)
                 if spx:checkPlayerCollision(game.player) then
-                    game:onPlayerDeath("sparx")
+                    game:onPlayerDeath("sparx", spx.x, spx.y)
                     break
                 end
             end

@@ -111,3 +111,19 @@
 [2026-10-03 22:09:19] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
 [2026-10-03 22:09:19] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
 [2026-10-03 22:09:19] [0000.05s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 22:17:51 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:17:51] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:17:51] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:17:51] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:17:51] [0000.06s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 22:18:04 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:18:04] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:18:04] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:18:04] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:18:04] [0000.06s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.

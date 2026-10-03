@@ -122,20 +122,21 @@ local function drawSegmentedBeam(x1, y1, x2, y2, thickness, shimmerPhase, glintP
             local sy1 = y1 + dy * ((i - 1) / segs)
             local sx2 = x1 + dx * (i / segs)
             local sy2 = y1 + dy * (i / segs)
+            love.graphics.setLineWidth(thickness)
             love.graphics.setColor(1.0, 1.0, 1.0, glintAlpha)
             love.graphics.line(sx1, sy1, sx2, sy2)
         end
     end
 
-    -- Small crisp tip point at moving head
+    -- Crisp glowing tip point at moving head
     love.graphics.setColor(1, 1, 1, 0.95)
-    love.graphics.circle("fill", x2, y2, thickness * 0.75)
+    love.graphics.circle("fill", x2, y2, thickness * 0.70)
 end
 
 function BorderFX.draw(bx, by, bw, bh)
     local pct = BorderFX.progress
-    local thickness = 2.0
-    local inset = 2 -- Inset slightly to prevent screen bezel clipping on R36S
+    local thickness = 5.0
+    local inset = 3 -- Inset cleanly to prevent bezel clipping on R36S
 
     -- Perimeter Coordinates
     local left = bx + inset
@@ -145,9 +146,9 @@ function BorderFX.draw(bx, by, bw, bh)
     local effW = right - left
     local effH = bottom - top
 
-    -- Base Track: Minimal subtle guide track showing the unfilled boundary
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.10, 0.16, 0.24, 0.40)
+    -- Base Track: Thicker guide track showing the unfilled boundary
+    love.graphics.setLineWidth(2.5)
+    love.graphics.setColor(0.12, 0.18, 0.28, 0.55)
     love.graphics.rectangle("line", left, top, effW, effH)
 
     if pct <= 0.0001 then return end

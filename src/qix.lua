@@ -180,7 +180,7 @@ function Qix:checkStixCollision(stixPath)
     for _, seg in ipairs(self.trail) do
         for i = 1, #stixPath - 1 do
             if lineIntersect(seg.p1, seg.p2, stixPath[i], stixPath[i + 1]) then
-                return true
+                return true, stixPath[i].x, stixPath[i].y
             end
         end
     end
