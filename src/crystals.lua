@@ -69,30 +69,80 @@ function Crystals.checkCollection(crystals, grid)
     return collected
 end
 
+local freezeImg = nil
+local batteryImg = nil
+
+local function getImages()
+    if freezeImg == nil then
+        if love.filesystem.getInfo("assets/freeze.png") then
+            local ok, img = pcall(love.graphics.newImage, "assets/freeze.png")
+            freezeImg = ok and img or false
+        else
+            freezeImg = false
+        end
+    end
+    if batteryImg == nil then
+        if love.filesystem.getInfo("assets/battery.png") then
+            local ok, img = pcall(love.graphics.newImage, "assets/battery.png")
+            batteryImg = ok and img or false
+        else
+            batteryImg = false
+        end
+    end
+    return (freezeImg or nil), (batteryImg or nil)
+end
+
 function Crystals.drawList(crystals, offsetX, offsetY, scaleX, scaleY)
+    local fImg, bImg = getImages()
+
     for _, c in ipairs(crystals) do
         local cx = offsetX + c.x * scaleX
         local cy = offsetY + c.y * scaleY
-        local pulse = 0.8 + 0.2 * math.sin(c.animTimer)
-        local size = 7 * pulse
+        local pulse = 0.85 + 0.15 * math.sin(c.animTimer)
+        local bob = math.sin(c.animTimer * 1.6) * 2.2 -- subtle floating bob
+        local drawY = cy + bob
 
-        -- Outer neon glow ring
-        love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.35)
-        love.graphics.circle("fill", cx, cy, size * 1.8)
+        if c.type == "FREEZE" and fImg then
+            -- Soft cyan aura glow
+            love.graphics.setColor(0.1, 0.85, 1.0, 0.32 * pulse)
+            love.graphics.circle("fill", cx, drawY, 20 * pulse)
 
-        -- Diamond crystal polygon
-        love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.95)
-        love.graphics.polygon("fill",
-            cx, cy - size,
-            cx + size, cy,
-            cx, cy + size,
-            cx - size, cy
-        )
+            -- Freeze crystal PNG icon (scaled to ~28px for clear visibility)
+            local s = (28 / 140) * pulse
+            love.graphics.setColor(1, 1, 1, 0.98)
+            love.graphics.draw(fImg, cx, drawY, 0, s, s, 70, 70)
+        elseif c.type == "BONUS" and bImg then
+            -- Soft golden battery aura glow
+            love.graphics.setColor(1.0, 0.85, 0.1, 0.32 * pulse)
+            love.graphics.circle("fill", cx, drawY, 20 * pulse)
 
-        -- White specular core
-        love.graphics.setColor(1, 1, 1, 0.9)
-        love.graphics.circle("fill", cx, cy, size * 0.35)
+            -- Battery PNG icon (scaled to ~28px for clear visibility)
+            local s = (28 / 140) * pulse
+            love.graphics.setColor(1, 1, 1, 0.98)
+            love.graphics.draw(bImg, cx, drawY, 0, s, s, 70, 70)
+        else
+            -- Shield Matrix / fallback polygon
+            local size = 11 * pulse
+
+            -- Outer neon glow ring
+            love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.35)
+            love.graphics.circle("fill", cx, drawY, size * 1.8)
+
+            -- Diamond crystal polygon
+            love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.95)
+            love.graphics.polygon("fill",
+                cx, drawY - size,
+                cx + size, drawY,
+                cx, drawY + size,
+                cx - size, drawY
+            )
+
+            -- White specular core
+            love.graphics.setColor(1, 1, 1, 0.9)
+            love.graphics.circle("fill", cx, drawY, size * 0.35)
+        end
     end
 end
 
 return Crystals
+

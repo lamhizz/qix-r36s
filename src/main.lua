@@ -13,6 +13,7 @@ local Achievements = require("achievements")
 local Crystals = require("crystals")
 local Logger = require("logger")
 local BorderFX = require("border_fx")
+local AmbientShips = require("ambient_ships")
 
 local COLOR_SLOW = {1, 0.45, 0.1}
 local COLOR_FAST = {0, 0.95, 1}
@@ -154,6 +155,7 @@ function love.load()
     Logger.init()
     Logger.installErrorHandler()
     BorderFX.init()
+    AmbientShips.init()
 
     -- Load Authentic Retro Arcade Font (scaled for crystal-clear readability on 640x480 screen)
     local fontPath = "fonts/pressstart2p.ttf"
@@ -490,6 +492,8 @@ function game:startLevel(levelNum)
     self.grid:init()
     self.player:reset(cfg)
     Particles.init()
+    BorderFX.reset(false)
+    AmbientShips.reset()
 
     -- Spawn in-field tactical crystals for Level 4+
     self.crystals = Crystals.spawnForLevel(self.grid, levelNum)
@@ -517,9 +521,13 @@ function game:startLevel(levelNum)
         self.grid:loadBackground(nil)
     end
 
-    -- Load foreground skin for uncovered playfield (rotates through foreground-art deck)
+    -- Load foreground skin for uncovered playfield (randomly varies each round)
     if #self.foregroundDeck > 0 then
-        local fgIndex = ((levelNum - 1) % #self.foregroundDeck) + 1
+        local fgIndex = love.math.random(1, #self.foregroundDeck)
+        if #self.foregroundDeck > 1 and self.lastFgIndex and fgIndex == self.lastFgIndex then
+            fgIndex = (fgIndex % #self.foregroundDeck) + 1
+        end
+        self.lastFgIndex = fgIndex
         local chosenFg = self.foregroundDeck[fgIndex]
         self.grid:loadForeground(chosenFg)
     else
@@ -550,6 +558,11 @@ function game:onAreaCaptured(captureResult)
     Audio.stopDraw()
     Audio.stopFuse()
     Audio.play("capture")
+
+    -- Update animated border level cut progress bar immediately
+    if self.targetPercent and self.targetPercent > 0 then
+        BorderFX.setProgress(captureResult.percent / self.targetPercent)
+    end
 
     -- Scoring: Slow draw gives 100 pts per 1%, Fast draw gives 50 pts per 1%
     local rate = captureResult.isSlow and 100 or 50
@@ -710,8 +723,16 @@ end
 function love.update(dt)
     -- Poll gamepad / keyboard input
     game:updateInput()
-    BorderFX.update(dt)
+    -- Update animated border line level cut progress bar
+    local isAttract = (game.state == "TITLE" or game.state == "HOW_TO" or game.state == "BADGES")
+    local curClaimed = (game.grid and game.grid.getClaimedPercent) and game.grid:getClaimedPercent() or 0
+    local targetGoal = game.targetPercent or 75
+    if game.state == "LEVEL_CLEAR" then
+        curClaimed = targetGoal -- Filled to 100% on level completion!
+    end
+    BorderFX.update(dt, curClaimed, targetGoal, isAttract)
     Particles.update(dt)
+    AmbientShips.update(dt)
     Achievements.update(dt)
     Logger.heartbeat(game.state, game.level, game.score, game.lives)
 
@@ -745,6 +766,31 @@ function love.update(dt)
         game.titleBlink = game.titleBlink + dt * 4
         if game.titleAttractQix then
             game.titleAttractQix:update(dt)
+        end
+        -- Smooth vertical scrolling with D-Pad or Left Stick
+        local scrollSpeed = 260
+        local scrollDelta = 0
+        if love.keyboard.isDown("up", "w") then
+            scrollDelta = scrollDelta - scrollSpeed * dt
+        elseif love.keyboard.isDown("down", "s") then
+            scrollDelta = scrollDelta + scrollSpeed * dt
+        end
+        local joysticks = love.joystick.getJoysticks()
+        for _, joy in ipairs(joysticks) do
+            if joy:isGamepad() then
+                if joy:isGamepadDown("dpup") then
+                    scrollDelta = scrollDelta - scrollSpeed * dt
+                elseif joy:isGamepadDown("dpdown") then
+                    scrollDelta = scrollDelta + scrollSpeed * dt
+                end
+                local ly = joy:getGamepadAxis("lefty")
+                if ly and math.abs(ly) > 0.3 then
+                    scrollDelta = scrollDelta + ly * scrollSpeed * dt
+                end
+            end
+        end
+        if scrollDelta ~= 0 then
+            game.howToScrollY = math.max(0, math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + scrollDelta))
         end
 
     elseif game.state == "PLAYING" then
@@ -1064,16 +1110,13 @@ function game:executeTitleOption()
 end
 
 function love.gamepadpressed(joystick, button)
-    -- Global Start Button Toggle (never executes menu options)
+    -- Global Start Button: Opens Pause menu when PLAYING (never closes menu on Start)
     if button == "start" then
         if game.state == "PLAYING" then
             game.state = "PAUSED"
             game.pauseIndex = 1
+            game.pauseOpenedAt = love.timer.getTime()
             Audio.stopAll()
-            return
-        elseif game.state == "PAUSED" then
-            game.state = "PLAYING"
-            Audio.play("tick")
             return
         end
     end
@@ -1083,6 +1126,10 @@ function love.gamepadpressed(joystick, button)
             Audio.toggleMute()
         end
     elseif game.state == "PAUSED" then
+        local now = love.timer.getTime()
+        if (now - (game.pauseOpenedAt or 0)) < 0.15 then
+            return
+        end
         if button == "dpup" then
             game:navMenu("up")
         elseif button == "dpdown" then
@@ -1119,11 +1166,19 @@ function love.gamepadpressed(joystick, button)
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
-        if button == "dpleft" or button == "leftshoulder" then
+        if button == "dpup" then
+            game.howToScrollY = math.max(0, (game.howToScrollY or 0) - 50)
+            Audio.play("tick")
+        elseif button == "dpdown" then
+            game.howToScrollY = math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + 50)
+            Audio.play("tick")
+        elseif button == "dpleft" or button == "leftshoulder" then
             game.howToPage = math.max(1, (game.howToPage or 1) - 1)
+            game.howToScrollY = 0
             Audio.play("tick")
         elseif button == "dpright" or button == "rightshoulder" then
             game.howToPage = math.min(2, (game.howToPage or 1) + 1)
+            game.howToScrollY = 0
             Audio.play("tick")
         elseif button == "a" or button == "b" or button == "start" or button == "back" then
             game.state = "TITLE"
@@ -1201,16 +1256,13 @@ function love.mousepressed(x, y, button)
 end
 
 function love.keypressed(key)
-    -- Global pause toggle (Escape or P)
+    -- Global pause: Open pause on Escape or P when PLAYING (never closes on P/Start)
     if key == "escape" or key == "p" then
         if game.state == "PLAYING" then
             game.state = "PAUSED"
             game.pauseIndex = 1
+            game.pauseOpenedAt = love.timer.getTime()
             Audio.stopAll()
-            return
-        elseif game.state == "PAUSED" then
-            game.state = "PLAYING"
-            Audio.play("tick")
             return
         end
     end
@@ -1247,11 +1299,19 @@ function love.keypressed(key)
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
-        if key == "left" or key == "a" then
+        if key == "up" or key == "w" then
+            game.howToScrollY = math.max(0, (game.howToScrollY or 0) - 50)
+            Audio.play("tick")
+        elseif key == "down" or key == "s" then
+            game.howToScrollY = math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + 50)
+            Audio.play("tick")
+        elseif key == "left" or key == "a" then
             game.howToPage = math.max(1, (game.howToPage or 1) - 1)
+            game.howToScrollY = 0
             Audio.play("tick")
         elseif key == "right" or key == "d" then
             game.howToPage = math.min(2, (game.howToPage or 1) + 1)
+            game.howToScrollY = 0
             Audio.play("tick")
         elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
             game.state = "TITLE"
@@ -1280,6 +1340,10 @@ function love.keypressed(key)
             game.state = "TITLE"
         end
     elseif game.state == "PAUSED" then
+        local now = love.timer.getTime()
+        if (now - (game.pauseOpenedAt or 0)) < 0.15 then
+            return
+        end
         if key == "up" or key == "w" then
             game:navMenu("up")
         elseif key == "down" or key == "s" then
@@ -1290,9 +1354,18 @@ function love.keypressed(key)
             game:navMenu("right")
         elseif key == "return" or key == "space" or key == "z" then
             game:executePauseOption()
+        elseif key == "b" or key == "escape" or key == "backspace" then
+            game.state = "PLAYING"
+            Audio.play("tick")
         end
     elseif key == "m" then
         Audio.toggleMute()
+    end
+end
+
+function love.wheelmoved(x, y)
+    if game.state == "HOW_TO" then
+        game.howToScrollY = math.max(0, math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) - y * 35))
     end
 end
 
@@ -1362,6 +1435,9 @@ function love.draw()
 
         -- Draw Visual FX Particles (Plasma cutting sparks, capture bursts, death shards)
         Particles.draw()
+
+        -- Draw Ambient Flyby Spaceships (diagonal visual crossing with neon trail light)
+        AmbientShips.draw()
 
         -- Draw Floating Score Popups (set font once)
         if #game.floatingScores > 0 then
@@ -1656,9 +1732,32 @@ function game:drawTitle()
 
     love.graphics.setColor(0.45, 0.52, 0.62, 0.85)
     love.graphics.printf("KEYBOARD: ARROWS/WASD + ENTER/SPACE  •  QUIT: ESC", 0, 452, 640, "center")
+
+end
+
+local howToAssets = nil
+local function getHowToAssets()
+    if not howToAssets then
+        howToAssets = {}
+        if love.filesystem.getInfo("assets/coursor/qix-player-coursor-1.png") then
+            local ok, img = pcall(love.graphics.newImage, "assets/coursor/qix-player-coursor-1.png")
+            if ok then howToAssets.ship = img end
+        end
+        if love.filesystem.getInfo("assets/freeze.png") then
+            local ok, img = pcall(love.graphics.newImage, "assets/freeze.png")
+            if ok then howToAssets.freeze = img end
+        end
+        if love.filesystem.getInfo("assets/battery.png") then
+            local ok, img = pcall(love.graphics.newImage, "assets/battery.png")
+            if ok then howToAssets.battery = img end
+        end
+    end
+    return howToAssets
 end
 
 function game:drawHowTo()
+    local hAssets = getHowToAssets()
+
     -- Pre-rendered cyber grid background
     if game.titleGridCanvas then
         love.graphics.setColor(1, 1, 1, 1)
@@ -1683,13 +1782,13 @@ function game:drawHowTo()
     love.graphics.setColor(1.0, 0.85, 0.2, 1.0)
     love.graphics.printf("★ HOW TO PLAY & RULES ★", mx, my + 14, mw, "center")
 
-    -- Page Switcher Pills
+    -- Page Switcher Tabs
     local curPage = game.howToPage or 1
     local tabW = 260
-    local tabH = 26
+    local tabH = 24
     local tabY = my + 44
-    local tab1X = mx + 26
-    local tab2X = mx + mw - 26 - tabW
+    local tab1X = mx + 24
+    local tab2X = mx + mw - 24 - tabW
 
     -- Tab 1
     if curPage == 1 then
@@ -1701,8 +1800,8 @@ function game:drawHowTo()
         love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH, 5, 5)
         love.graphics.setColor(0.55, 0.65, 0.78, 1)
     end
-    love.graphics.setFont(game.font)
-    love.graphics.printf("1. RULES & CONTROLS", tab1X, tabY + 6, tabW, "center")
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.printf("1. RULES & CONTROLS", tab1X, tabY + 7, tabW, "center")
 
     -- Tab 2
     if curPage == 2 then
@@ -1714,140 +1813,242 @@ function game:drawHowTo()
         love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH, 5, 5)
         love.graphics.setColor(0.55, 0.65, 0.78, 1)
     end
-    love.graphics.setFont(game.font)
-    love.graphics.printf("2. THREATS & CRYSTALS", tab2X, tabY + 6, tabW, "center")
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.printf("2. THREATS & CRYSTALS", tab2X, tabY + 7, tabW, "center")
 
-    -- Divider
+    -- Divider line
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.line(mx + 20, my + 78, mx + mw - 20, my + 78)
+    love.graphics.line(mx + 20, my + 74, mx + mw - 20, my + 74)
 
-    -- PAGE 1: OBJECTIVE & DUAL DRAW CONTROLS
+    -- Scrollable content viewport
+    local viewX = mx + 16
+    local viewY = my + 80
+    local viewW = mw - 32
+    local viewH = 332
+
+    love.graphics.setScissor(viewX, viewY, viewW, viewH)
+    love.graphics.push()
+    love.graphics.translate(0, - (game.howToScrollY or 0))
+
+    local contentY = viewY + 6
+    local cardW = viewW - 14
+
     if curPage == 1 then
-        local cy = my + 88
-
-        -- Section 1: Objective
-        love.graphics.setFont(game.font)
+        -- ---------------- PAGE 1: RULES & CONTROLS ----------------
+        -- 1. Objective
+        love.graphics.setFont(game.fontSmall)
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.print("► MISSION OBJECTIVE:", mx + 24, cy)
+        love.graphics.print("► MISSION OBJECTIVE:", viewX + 4, contentY)
+        contentY = contentY + 18
 
-        love.graphics.setColor(0.92, 0.94, 0.98, 1.0)
-        love.graphics.printf("Draw Stix lines into the playfield to enclose territory. Claim 75% or more of the grid to unveil the full hidden artwork and clear the round!", mx + 24, cy + 20, mw - 48, "left")
+        love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
+        love.graphics.printf("Draw Stix lines into the playfield to enclose territory. Claim 75% or more of the grid to unveil the full hidden artwork and clear the round!", viewX + 6, contentY, cardW - 8, "left")
+        contentY = contentY + 44
 
-        cy = cy + 62
-
-        -- Section 2: Dual Draw Controls
+        -- 2. Dual Draw Speed Controls
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.print("► DUAL DRAW SPEED CONTROLS:", mx + 24, cy)
+        love.graphics.print("► DUAL DRAW SPEED CONTROLS:", viewX + 4, contentY)
+        contentY = contentY + 20
 
-        cy = cy + 22
         -- Fast Draw Card
-        love.graphics.setColor(0.06, 0.12, 0.20, 0.9)
-        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.setColor(0.05, 0.12, 0.22, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60, 6, 6)
         love.graphics.setColor(0.0, 0.85, 1.0, 0.5)
-        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60, 6, 6)
+
+        -- Spaceship icon with cyan glow
+        if hAssets.ship then
+            love.graphics.setColor(0.0, 0.95, 1.0, 0.4)
+            love.graphics.circle("fill", viewX + 26, contentY + 30, 14)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(hAssets.ship, viewX + 26, contentY + 30, math.pi * 0.5, 24 / 61, 24 / 61, 30.5, 29.5)
+        end
 
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.print("FAST DRAW  [ (A) / SPACE ]", mx + 36, cy + 8)
+        love.graphics.print("FAST DRAW  [ (A) / SPACE ]", viewX + 50, contentY + 8)
         love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
-        love.graphics.print("Standard speed, 1X points. Best for quick slicing & escapes.", mx + 36, cy + 28)
+        love.graphics.printf("Standard speed, 1X points. Best for quick slicing, fast escapes & aggressive grid capture.", viewX + 50, contentY + 26, cardW - 60, "left")
+        contentY = contentY + 70
 
-        cy = cy + 60
         -- Slow Draw Card
-        love.graphics.setColor(0.20, 0.08, 0.04, 0.9)
-        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.setColor(0.20, 0.08, 0.04, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60, 6, 6)
         love.graphics.setColor(1.0, 0.45, 0.1, 0.6)
-        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60, 6, 6)
 
-        love.graphics.setColor(1.0, 0.50, 0.15, 1.0)
-        love.graphics.print("SLOW DRAW  [ (B) / (X) / SHIFT ]", mx + 36, cy + 8)
+        -- Spaceship icon with orange glow
+        if hAssets.ship then
+            love.graphics.setColor(1.0, 0.45, 0.1, 0.4)
+            love.graphics.circle("fill", viewX + 26, contentY + 30, 14)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(hAssets.ship, viewX + 26, contentY + 30, math.pi * 0.5, 24 / 61, 24 / 61, 30.5, 29.5)
+        end
+
+        love.graphics.setColor(1.0, 0.55, 0.15, 1.0)
+        love.graphics.print("SLOW DRAW  [ (B) / (X) / SHIFT ]", viewX + 50, contentY + 8)
         love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
-        love.graphics.print("Half speed, but awards DOUBLE 2X POINTS & massive score boosts!", mx + 36, cy + 28)
+        love.graphics.printf("Half speed, but awards DOUBLE 2X POINTS & massive score boosts! High risk, maximum arcade rewards.", viewX + 50, contentY + 26, cardW - 60, "left")
+        contentY = contentY + 70
 
-        cy = cy + 60
-        -- Section 3: Split-Qix Rule
+        -- 3. Split-Qix Rule
         love.graphics.setColor(1.0, 0.85, 0.20, 1.0)
-        love.graphics.print("★ CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", mx + 24, cy)
+        love.graphics.print("★ CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", viewX + 4, contentY)
+        contentY = contentY + 18
 
-        love.graphics.setColor(0.92, 0.94, 0.98, 1.0)
-        love.graphics.printf("In higher levels, TWO Qixes roam the field! Slice between them into separate compartments to INSTANTLY WIN the round and unlock a permanent Score Multiplier (2X up to 9X)!", mx + 24, cy + 20, mw - 48, "left")
+        love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
+        love.graphics.printf("In higher levels, TWO Qixes roam the field! Slice between them into separate compartments to INSTANTLY WIN the round and unlock a permanent Score Multiplier (2X up to 9X)!", viewX + 6, contentY, cardW - 8, "left")
+        contentY = contentY + 52
 
-    -- PAGE 2: HAZARDS & TACTICAL CRYSTALS
+        -- 4. Intersection Snapping & Turn Assist
+        love.graphics.setColor(0.2, 1.0, 0.45, 1.0)
+        love.graphics.print("► CORNER SNAPPING & TURN ASSIST:", viewX + 4, contentY)
+        contentY = contentY + 18
+
+        love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
+        love.graphics.printf("Tap perpendicular inputs near intersections for fluid 120ms buffered snapping onto perpendicular perimeter tracks without stalling.", viewX + 6, contentY, cardW - 8, "left")
+        contentY = contentY + 48
+
     else
-        local cy = my + 88
-
-        -- Section 1: Hazards
-        love.graphics.setFont(game.font)
+        -- ---------------- PAGE 2: THREATS & CRYSTALS ----------------
+        -- 1. Enemy Threats & Hazards
+        love.graphics.setFont(game.fontSmall)
         love.graphics.setColor(1.0, 0.35, 0.45, 1.0)
-        love.graphics.print("► ENEMY THREATS & HAZARDS:", mx + 24, cy)
+        love.graphics.print("► ENEMY THREATS & HAZARDS:", viewX + 4, contentY)
+        contentY = contentY + 18
 
-        cy = cy + 22
         -- Hazard 1: Qix
-        love.graphics.setColor(1.0, 0.25, 0.85, 1.0)
-        love.graphics.print("THE QIX:", mx + 32, cy)
+        love.graphics.setColor(0.12, 0.05, 0.14, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.25, 0.85, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.35, 0.90, 1.0)
+        love.graphics.print("THE QIX:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Chaotic helix. Striking your active stix line is fatal!", mx + 130, cy)
+        love.graphics.printf("Chaotic wandering helix. Striking your active stix line is fatal! Seal lines quickly.", viewX + 14, contentY + 22, cardW - 24, "left")
+        contentY = contentY + 54
 
-        cy = cy + 24
         -- Hazard 2: Sparx
-        love.graphics.setColor(1.0, 0.80, 0.15, 1.0)
-        love.graphics.print("SPARX:", mx + 32, cy)
+        love.graphics.setColor(0.16, 0.12, 0.04, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.80, 0.15, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.85, 0.20, 1.0)
+        love.graphics.print("SPARX:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Patrol borders. Mutate into deadly Super Sparx on timeout!", mx + 130, cy)
+        love.graphics.printf("Patrol perimeter borders. Mutate into lethal Super Sparx when the level timer runs out!", viewX + 14, contentY + 22, cardW - 24, "left")
+        contentY = contentY + 54
 
-        cy = cy + 24
         -- Hazard 3: Fuse
-        love.graphics.setColor(1.0, 0.30, 0.30, 1.0)
-        love.graphics.print("THE FUSE:", mx + 32, cy)
+        love.graphics.setColor(0.18, 0.05, 0.05, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.30, 0.30, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.setColor(1.0, 0.35, 0.35, 1.0)
+        love.graphics.print("THE FUSE:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Stopping while drawing ignites a fuse that burns your line!", mx + 130, cy)
+        love.graphics.printf("Stopping while drawing ignites a fuse that races down your trail—keep moving!", viewX + 14, contentY + 22, cardW - 24, "left")
+        contentY = contentY + 56
 
-        cy = cy + 34
-        -- Section 2: Tactical Power Crystals
+        -- 2. Tactical Power Collectibles (Level 4+)
         love.graphics.setColor(0.2, 0.95, 0.6, 1.0)
-        love.graphics.print("► TACTICAL POWER CRYSTALS (LEVEL 4+):", mx + 24, cy)
+        love.graphics.print("► TACTICAL POWER COLLECTIBLES (LEVEL 4+):", viewX + 4, contentY)
+        contentY = contentY + 18
+
         love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
-        love.graphics.printf("Enclose floating crystals inside claimed zones to activate boosts:", mx + 24, cy + 20, mw - 48, "left")
+        love.graphics.printf("Enclose floating items inside claimed territory to activate instant combat boosts:", viewX + 6, contentY, cardW - 8, "left")
+        contentY = contentY + 36
 
-        cy = cy + 44
         -- Crystal 1: Freeze
-        love.graphics.setColor(0.08, 0.14, 0.22, 0.9)
-        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
-        love.graphics.setColor(0.1, 0.9, 1.0, 0.6)
-        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
-        love.graphics.setColor(0.1, 0.9, 1.0, 1.0)
-        love.graphics.print("❄ CHRONO FREEZE", mx + 36, cy + 10)
-        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Stops all enemy movement for 4.5 seconds!", mx + 215, cy + 10)
+        love.graphics.setColor(0.06, 0.14, 0.22, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.setColor(0.1, 0.9, 1.0, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
 
-        cy = cy + 44
-        -- Crystal 2: Bonus
-        love.graphics.setColor(0.20, 0.16, 0.05, 0.9)
-        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
-        love.graphics.setColor(1.0, 0.85, 0.1, 0.6)
-        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
-        love.graphics.setColor(1.0, 0.85, 0.1, 1.0)
-        love.graphics.print("★ STAR CACHE", mx + 36, cy + 10)
-        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Instant +5,000 points added to your score!", mx + 215, cy + 10)
+        -- Freeze PNG Asset Icon
+        if hAssets.freeze then
+            love.graphics.setColor(0.1, 0.85, 1.0, 0.35)
+            love.graphics.circle("fill", viewX + 26, contentY + 25, 16)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(hAssets.freeze, viewX + 26, contentY + 25, 0, 26 / 140, 26 / 140, 70, 70)
+        end
 
-        cy = cy + 44
+        love.graphics.setColor(0.1, 0.95, 1.0, 1.0)
+        love.graphics.print("CHRONO FREEZE", viewX + 50, contentY + 8)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.printf("Freezes all enemies and hazards in place for 4.5 seconds!", viewX + 50, contentY + 24, cardW - 60, "left")
+        contentY = contentY + 58
+
+        -- Crystal 2: Bonus Battery
+        love.graphics.setColor(0.18, 0.15, 0.04, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.setColor(1.0, 0.85, 0.1, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
+
+        -- Battery PNG Asset Icon
+        if hAssets.battery then
+            love.graphics.setColor(1.0, 0.85, 0.1, 0.35)
+            love.graphics.circle("fill", viewX + 26, contentY + 25, 16)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(hAssets.battery, viewX + 26, contentY + 25, 0, 26 / 140, 26 / 140, 70, 70)
+        end
+
+        love.graphics.setColor(1.0, 0.88, 0.15, 1.0)
+        love.graphics.print("BATTERY POWER CELL", viewX + 50, contentY + 8)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.printf("Instant +5,000 bonus points added directly to your score!", viewX + 50, contentY + 24, cardW - 60, "left")
+        contentY = contentY + 58
+
         -- Crystal 3: Shield
-        love.graphics.setColor(0.06, 0.18, 0.10, 0.9)
-        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
-        love.graphics.setColor(0.2, 1.0, 0.4, 0.6)
-        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(0.05, 0.16, 0.09, 0.92)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.setColor(0.2, 1.0, 0.4, 0.5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
+
+        -- Shield Matrix diamond icon
+        love.graphics.setColor(0.2, 1.0, 0.4, 0.35)
+        love.graphics.circle("fill", viewX + 26, contentY + 25, 16)
         love.graphics.setColor(0.2, 1.0, 0.4, 1.0)
-        love.graphics.print("🛡 SHIELD MATRIX", mx + 36, cy + 10)
+        love.graphics.polygon("fill", viewX + 26, contentY + 16, viewX + 35, contentY + 25, viewX + 26, contentY + 34, viewX + 17, contentY + 25)
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.circle("fill", viewX + 26, contentY + 25, 3.5)
+
+        love.graphics.setColor(0.2, 1.0, 0.4, 1.0)
+        love.graphics.print("SHIELD MATRIX", viewX + 50, contentY + 8)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.print("Awards +1 Extra Life and temporary invulnerability!", mx + 215, cy + 10)
+        love.graphics.printf("Awards +1 Extra Life and temporary invulnerability shield!", viewX + 50, contentY + 24, cardW - 60, "left")
+        contentY = contentY + 58
+    end
+
+    local totalContentH = contentY - (viewY + 6)
+    game.howToMaxScroll = math.max(0, totalContentH - viewH + 20)
+
+    love.graphics.pop()
+    love.graphics.setScissor()
+
+    -- Scrollbar track & thumb
+    if game.howToMaxScroll and game.howToMaxScroll > 0 then
+        local sbX = mx + mw - 14
+        local sbY = viewY + 4
+        local sbW = 4
+        local sbH = viewH - 8
+        love.graphics.setColor(0.1, 0.2, 0.3, 0.4)
+        love.graphics.rectangle("fill", sbX, sbY, sbW, sbH, 2, 2)
+
+        local ratio = viewH / (viewH + game.howToMaxScroll)
+        local thumbH = math.max(22, math.floor(sbH * ratio))
+        local scrollFraction = math.min(1.0, math.max(0.0, (game.howToScrollY or 0) / game.howToMaxScroll))
+        local thumbY = sbY + math.floor((sbH - thumbH) * scrollFraction)
+
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.75)
+        love.graphics.rectangle("fill", sbX, thumbY, sbW, thumbH, 2, 2)
     end
 
     -- Footer Navigation Guidance
     local pulse = 0.5 + 0.5 * math.sin(self.titleBlink * 3)
     love.graphics.setColor(0.2, 1.0, 0.4, 0.7 + 0.3 * pulse)
-    love.graphics.setFont(game.font)
-    love.graphics.printf("◄/►: SWITCH PAGE   •   PRESS (A) OR (B) TO RETURN", mx, my + 418, mw, "center")
+    love.graphics.setFont(game.fontSmall)
+    love.graphics.printf("▲/▼: SCROLL   •   ◄/►: SWITCH PAGE   •   (A) OR (B) TO RETURN", mx, my + 420, mw, "center")
 end
 
 function game:drawBadgesGallery()
@@ -2036,7 +2237,7 @@ function game:drawPauseMenu()
             love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "RESUME" then
             love.graphics.setColor(0.3, 0.85, 1.0, isSelected and 1.0 or 0.6)
-            love.graphics.printf(isSelected and "[ PRESS A / START ]" or "", 300, y + 3, 210, "right")
+            love.graphics.printf(isSelected and "[ PRESS A / B ]" or "", 300, y + 3, 210, "right")
         elseif item.id == "RESTART" or item.id == "QUIT" then
             love.graphics.setColor(1.0, 0.6, 0.2, isSelected and 1.0 or 0.6)
             love.graphics.printf(isSelected and "[ PRESS A ]" or "", 300, y + 3, 210, "right")
@@ -2045,7 +2246,7 @@ function game:drawPauseMenu()
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.5, 0.6, 0.7, 1)
-    love.graphics.printf("▲/▼: SELECT ROW   ◄/►: CHANGE VALUE   START: RESUME", 95, 396, 450, "center")
+    love.graphics.printf("▲/▼: SELECT   ◄/►: CHANGE   (A): SELECT   (B): RESUME", 95, 396, 450, "center")
 end
 
 function game:drawLevelClear()

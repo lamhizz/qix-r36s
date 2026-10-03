@@ -1,0 +1,113 @@
+
+==================================================
+[SESSION START] 2026-10-03 21:58:28 | QIX Arcade R36S
+==================================================
+[2026-10-03 21:58:28] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 21:58:28] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 21:58:28] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 21:58:28] [0000.06s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 21:58:54 | QIX Arcade R36S
+==================================================
+[2026-10-03 21:58:54] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 21:58:54] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 21:58:54] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+
+==================================================
+[SESSION START] 2026-10-03 21:59:31 | QIX Arcade R36S
+==================================================
+[2026-10-03 21:59:31] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 21:59:31] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 21:59:31] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 21:59:32] [0000.05s] [  1.5 MB] [INFO/GAME] Starting Round 1 (Difficulty: ARCADE | Target: 65% | SparxTimer: 24s)
+[2026-10-03 21:59:32] [0000.15s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-elizabeth-zernetska-86424040-37054679.jpg (Original: 2304x3072 -> GPU: 360x480)
+[2026-10-03 21:59:32] [0000.24s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-3.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:32] [0000.25s] [  3.5 MB] [INFO/GAME] Starting Round 2 (Difficulty: ARCADE | Target: 68% | SparxTimer: 22s)
+[2026-10-03 21:59:32] [0000.37s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-kim-magno-2163589000-39356668.jpg (Original: 2560x3840 -> GPU: 320x480)
+[2026-10-03 21:59:32] [0000.40s] [  2.0 MB] [INFO/GRID] Loaded foreground skin: qix-pcb.jpg (Source: 1024x764 -> Grid: 355x251)
+[2026-10-03 21:59:32] [0000.40s] [  2.0 MB] [INFO/GAME] Starting Round 3 (Difficulty: ARCADE | Target: 71% | SparxTimer: 20s)
+[2026-10-03 21:59:32] [0000.53s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 21:59:32] [0000.61s] [  2.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:32] [0000.61s] [  2.5 MB] [INFO/GAME] Starting Round 4 (Difficulty: ARCADE | Target: 74% | SparxTimer: 18s)
+[2026-10-03 21:59:32] [0000.89s] [  5.5 MB] [INFO/GRID] Loaded background: pexels-axp-photography-500641970-19227922.jpg (Original: 6000x3940 -> GPU: 640x420)
+[2026-10-03 21:59:32] [0000.93s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: qix-pcb.jpg (Source: 1024x764 -> Grid: 355x251)
+[2026-10-03 21:59:32] [0000.93s] [  3.5 MB] [INFO/GAME] Starting Round 5 (Difficulty: ARCADE | Target: 77% | SparxTimer: 16s)
+[2026-10-03 21:59:33] [0001.05s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 21:59:33] [0001.14s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-1.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:33] [0001.14s] [  3.5 MB] [INFO/GAME] Starting Round 6 (Difficulty: ARCADE | Target: 80% | SparxTimer: 14s)
+[2026-10-03 21:59:33] [0001.42s] [  5.5 MB] [INFO/GRID] Loaded background: pexels-axp-photography-500641970-19227922.jpg (Original: 6000x3940 -> GPU: 640x420)
+[2026-10-03 21:59:33] [0001.50s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:33] [0001.50s] [  3.5 MB] [INFO/GAME] Starting Round 7 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:33] [0001.61s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-kim-magno-2163589000-39356668.jpg (Original: 2560x3840 -> GPU: 320x480)
+[2026-10-03 21:59:33] [0001.70s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-1.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:33] [0001.70s] [  3.5 MB] [INFO/GAME] Starting Round 8 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:33] [0001.82s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 21:59:33] [0001.90s] [  2.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:33] [0001.90s] [  2.5 MB] [INFO/GAME] Starting Round 9 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:33] [0002.00s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-elizabeth-zernetska-86424040-37054679.jpg (Original: 2304x3072 -> GPU: 360x480)
+[2026-10-03 21:59:34] [0002.09s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-3.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:34] [0002.09s] [  3.5 MB] [INFO/GAME] Starting Round 10 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:34] [0002.36s] [  5.5 MB] [INFO/GRID] Loaded background: pexels-axp-photography-500641970-19227922.jpg (Original: 6000x3940 -> GPU: 640x420)
+[2026-10-03 21:59:34] [0002.39s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: qix-pcb.jpg (Source: 1024x764 -> Grid: 355x251)
+[2026-10-03 21:59:34] [0002.39s] [  3.5 MB] [INFO/GAME] Starting Round 11 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:34] [0002.49s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-elizabeth-zernetska-86424040-37054679.jpg (Original: 2304x3072 -> GPU: 360x480)
+[2026-10-03 21:59:34] [0002.58s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-1.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:34] [0002.58s] [  3.5 MB] [INFO/GAME] Starting Round 12 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:34] [0002.70s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-kim-magno-2163589000-39356668.jpg (Original: 2560x3840 -> GPU: 320x480)
+[2026-10-03 21:59:34] [0002.78s] [  2.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:34] [0002.78s] [  2.5 MB] [INFO/GAME] Starting Round 13 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:34] [0002.90s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 21:59:34] [0002.93s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: qix-pcb.jpg (Source: 1024x764 -> Grid: 355x251)
+[2026-10-03 21:59:34] [0002.93s] [  1.7 MB] [INFO/GAME] Starting Round 14 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:35] [0003.20s] [  5.5 MB] [INFO/GRID] Loaded background: pexels-axp-photography-500641970-19227922.jpg (Original: 6000x3940 -> GPU: 640x420)
+[2026-10-03 21:59:35] [0003.28s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:35] [0003.28s] [  3.5 MB] [INFO/GAME] Starting Round 15 (Difficulty: ARCADE | Target: 80% | SparxTimer: 12s)
+[2026-10-03 21:59:35] [0003.40s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 21:59:35] [0003.49s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-3.jpeg (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-03 21:59:35] [0003.49s] [  3.5 MB] [INFO/GAME] Starting Round 1 (Difficulty: ARCADE | Target: 65% | SparxTimer: 24s)
+[2026-10-03 21:59:35] [0003.59s] [  2.5 MB] [INFO/GRID] Loaded background: pexels-elizabeth-zernetska-86424040-37054679.jpg (Original: 2304x3072 -> GPU: 360x480)
+[2026-10-03 21:59:35] [0003.68s] [  3.5 MB] [INFO/GRID] Loaded foreground skin: foreground-1.jpeg (Source: 2400x1792 -> Grid: 355x251)
+
+==================================================
+[SESSION START] 2026-10-03 22:00:14 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:00:14] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:00:14] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:00:14] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:00:14] [0000.05s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 22:05:00 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:05:00] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:05:00] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:05:00] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:05:00] [0000.05s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+[2026-10-03 22:05:00] [0000.06s] [  1.5 MB] [INFO/GAME] Starting Round 1 (Difficulty: ARCADE | Target: 65% | SparxTimer: 24s)
+[2026-10-03 22:05:00] [0000.19s] [  2.0 MB] [INFO/GRID] Loaded background: pexels-merwak-raw-399619273-32064655.jpg (Original: 3269x4359 -> GPU: 359x480)
+[2026-10-03 22:05:00] [0000.28s] [  2.5 MB] [INFO/GRID] Loaded foreground skin: foreground-2.jpeg (Source: 2400x1792 -> Grid: 355x251)
+
+==================================================
+[SESSION START] 2026-10-03 22:05:09 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:05:09] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:05:09] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:05:09] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:05:09] [0000.09s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 22:08:30 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:08:30] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:08:30] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:08:30] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:08:30] [0000.06s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+
+==================================================
+[SESSION START] 2026-10-03 22:09:19 | QIX Arcade R36S
+==================================================
+[2026-10-03 22:09:19] [0000.00s] [  0.5 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-03 22:09:19] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-03 22:09:19] [0000.00s] [  0.5 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-03 22:09:19] [0000.05s] [  1.5 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.

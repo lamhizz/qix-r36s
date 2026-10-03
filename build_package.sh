@@ -51,6 +51,7 @@ if [ -d "art_original" ]; then
 fi
 cp -r "$SRC_DIR/foreground-art" "$BUILD_DIR/$PACKAGE_NAME/"
 cp -r "$SRC_DIR/fonts" "$BUILD_DIR/$PACKAGE_NAME/"
+cp -r "$SRC_DIR/assets" "$BUILD_DIR/$PACKAGE_NAME/"
 
 # Remove any macOS metadata files
 find "$BUILD_DIR" -name ".DS_Store" -delete

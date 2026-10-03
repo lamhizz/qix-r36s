@@ -44,6 +44,7 @@ function Player:reset(cfg)
     self.animTime = 0
 
     self.usedFastThisLevel = false
+    self.facingAngle = 0
 
     -- Corner Snapping & Pre-Turn Assist state
     self.lastMoveDirX = 0
@@ -103,6 +104,7 @@ function Player:respawn()
     self.fuseActive = false
     self.fuseIndex = 1
     self.shieldTimer = self.shieldDuration
+    self.facingAngle = 0
     self.lastMoveDirX = 0
     self.lastMoveDirY = 0
     self:clearTurnBuffer()
@@ -463,6 +465,16 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
         dy = 0 -- Snap to cardinal axis
     end
 
+    if dx == 1 then
+        self.facingAngle = math.pi * 0.5
+    elseif dx == -1 then
+        self.facingAngle = -math.pi * 0.5
+    elseif dy == 1 then
+        self.facingAngle = math.pi
+    elseif dy == -1 then
+        self.facingAngle = 0
+    end
+
     local nx = self.x + dx
     local ny = self.y + dy
 
@@ -549,6 +561,20 @@ end
 
 local stixLineCoords = {}
 local DIAMOND_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0 }
+local cursorImg = nil
+
+local function getCursorImage()
+    if cursorImg == nil then
+        local path = "assets/coursor/qix-player-coursor-1.png"
+        if love.filesystem.getInfo(path) then
+            local ok, img = pcall(love.graphics.newImage, path)
+            cursorImg = ok and img or false
+        else
+            cursorImg = false
+        end
+    end
+    return cursorImg or nil
+end
 
 function Player:draw(offsetX, offsetY, scaleX, scaleY)
     if self.state == STATE_DEAD then return end
@@ -640,37 +666,54 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
         end
     end
 
-    -- Draw player marker (diamond)
+    -- Draw player marker (spaceship)
     local px = offsetX + self.x * scaleX
     local py = offsetY + self.y * scaleY
-    local size = 3.3 * scaleX
+    local size = 5.0 * scaleX
 
     -- Respawn shield flashing & pulsing aura
     if self:isShielded() then
         local pulse = 1.0 + 0.25 * math.sin(self.animTime * 12)
         local alpha = 0.45 + 0.35 * math.sin(self.animTime * 14)
         love.graphics.setColor(0.0, 0.95, 1.0, alpha)
-        love.graphics.setLineWidth(1.5 * scaleX)
-        love.graphics.circle("line", px, py, size * 2.2 * pulse)
+        love.graphics.setLineWidth(1.6 * scaleX)
+        love.graphics.circle("line", px, py, 19 * pulse)
         love.graphics.setColor(1.0, 0.85, 0.2, alpha * 0.7)
-        love.graphics.circle("line", px, py, size * 1.5 * pulse)
+        love.graphics.circle("line", px, py, 15 * pulse)
     end
 
-    -- Marker diamond (reusable scratch table)
-    local mr, mg, mb = 1, 1, 1
-    if self.state == STATE_DRAWING then
-        if self.isSlow then mr, mg, mb = 1, 0.4, 0.2 else mr, mg, mb = 0.2, 1, 1 end
+    local cImg = getCursorImage()
+    if cImg then
+        -- Engine thruster aura when drawing
+        if self.state == STATE_DRAWING then
+            local pulse = 0.7 + 0.3 * math.sin(self.animTime * 24)
+            local gr, gg, gb = 0.0, 0.9, 1.0
+            if self.isSlow then gr, gg, gb = 1.0, 0.45, 0.1 end
+            love.graphics.setColor(gr, gg, gb, 0.45 * pulse)
+            love.graphics.circle("fill", px, py, 11 * pulse)
+        end
+
+        -- Render spaceship cursor rotated to movement heading (increased to ~25px for handheld clarity)
+        local shipScale = 25 / 61
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(cImg, px, py, self.facingAngle or 0, shipScale, shipScale, 30.5, 29.5)
+    else
+        -- Fallback diamond polygon if asset missing
+        local mr, mg, mb = 1, 1, 1
+        if self.state == STATE_DRAWING then
+            if self.isSlow then mr, mg, mb = 1, 0.4, 0.2 else mr, mg, mb = 0.2, 1, 1 end
+        end
+        love.graphics.setColor(mr, mg, mb, 1)
+
+        DIAMOND_POLYGON[1] = px;        DIAMOND_POLYGON[2] = py - size
+        DIAMOND_POLYGON[3] = px + size; DIAMOND_POLYGON[4] = py
+        DIAMOND_POLYGON[5] = px;        DIAMOND_POLYGON[6] = py + size
+        DIAMOND_POLYGON[7] = px - size; DIAMOND_POLYGON[8] = py
+
+        love.graphics.polygon("fill", DIAMOND_POLYGON)
+        love.graphics.setColor(0, 0, 0, 1)
+        love.graphics.polygon("line", DIAMOND_POLYGON)
     end
-    love.graphics.setColor(mr, mg, mb, 1)
-
-    DIAMOND_POLYGON[1] = px;        DIAMOND_POLYGON[2] = py - size
-    DIAMOND_POLYGON[3] = px + size; DIAMOND_POLYGON[4] = py
-    DIAMOND_POLYGON[5] = px;        DIAMOND_POLYGON[6] = py + size
-    DIAMOND_POLYGON[7] = px - size; DIAMOND_POLYGON[8] = py
-
-    love.graphics.polygon("fill", DIAMOND_POLYGON)
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.polygon("line", DIAMOND_POLYGON)
 end
 
 return Player
