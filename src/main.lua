@@ -11,6 +11,8 @@ local Audio = require("audio")
 local Particles = require("particles")
 local Achievements = require("achievements")
 local Crystals = require("crystals")
+local Logger = require("logger")
+local BorderFX = require("border_fx")
 
 local COLOR_SLOW = {1, 0.45, 0.1}
 local COLOR_FAST = {0, 0.95, 1}
@@ -112,6 +114,8 @@ game = {
     isNewRecord = false,
     sessionInitialHighScore = 0,
     badgesScrollIndex = 1,
+    howToPage = 1,
+    gameOverAnim = nil,
 
     -- Pause Menu
     pauseIndex = 1,
@@ -147,15 +151,18 @@ game = {
 function love.load()
     love.graphics.setDefaultFilter("nearest", "nearest")
     Audio.init()
+    Logger.init()
+    Logger.installErrorHandler()
+    BorderFX.init()
 
-    -- Load Authentic Retro Arcade Font
+    -- Load Authentic Retro Arcade Font (scaled for crystal-clear readability on 640x480 screen)
     local fontPath = "fonts/pressstart2p.ttf"
     if love.filesystem.getInfo(fontPath) then
-        local success, fSmall = pcall(love.graphics.newFont, fontPath, 8)
-        local success2, fNormal = pcall(love.graphics.newFont, fontPath, 10)
-        local success3, fMid = pcall(love.graphics.newFont, fontPath, 14)
+        local success, fSmall = pcall(love.graphics.newFont, fontPath, 10)
+        local success2, fNormal = pcall(love.graphics.newFont, fontPath, 12)
+        local success3, fMid = pcall(love.graphics.newFont, fontPath, 16)
         local success4, fBig = pcall(love.graphics.newFont, fontPath, 26)
-        local success5, fTitle = pcall(love.graphics.newFont, fontPath, 46)
+        local success5, fTitle = pcall(love.graphics.newFont, fontPath, 42)
         if success and success2 and success3 and success4 then
             game.fontSmall = fSmall
             game.font = fNormal
@@ -170,7 +177,7 @@ function love.load()
         game.font = love.graphics.newFont(12)
         game.fontMid = love.graphics.newFont(16)
         game.fontBig = love.graphics.newFont(26)
-        game.fontTitle = love.graphics.newFont(40)
+        game.fontTitle = love.graphics.newFont(42)
     end
     love.graphics.setFont(game.font)
 
@@ -230,6 +237,11 @@ function love.load()
     for x = 0, 640, 32 do love.graphics.line(x, 0, x, 480) end
     for y = 0, 480, 32 do love.graphics.line(0, y, 640, y) end
     love.graphics.setCanvas()
+
+    if os.getenv("QIX_TEST_QUIT") then
+        Logger.info("TEST", "QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.")
+        love.event.quit(0)
+    end
 end
 
 function game:scanArtDeck()
@@ -461,6 +473,9 @@ function game:startLevel(levelNum)
     self.timeInLevel = 0
     self.freezeTimer = 0
     self.targetPercent = math.min(cfg.targetMax, cfg.targetBase + (levelNum - 1) * cfg.targetStep)
+    Logger.info("GAME", "Starting Round %d (Difficulty: %s | Target: %d%% | SparxTimer: %ds)",
+        levelNum, self.difficulty, self.targetPercent, math.max(12, cfg.sparxTimer - (levelNum * 2)))
+    collectgarbage("collect")
 
     -- Super Sparx introduced in later levels (Level 2+)
     self.superSparxEnabled = (levelNum >= 2)
@@ -679,6 +694,8 @@ function game:onPlayerDeath(reason)
     self.player.state = Player.STATE_DEAD
     self.lives = self.lives - 1
     self.deathTimer = 1.0
+    Logger.info("GAME", "Player lost life (%s). Remaining lives: %d | Level: %d | Score: %d",
+        reason or "unknown", self.lives, self.level, self.score)
 
     -- Vector diamond fragment burst
     local px = self.offsetX + self.player.x * self.scaleX
@@ -693,8 +710,10 @@ end
 function love.update(dt)
     -- Poll gamepad / keyboard input
     game:updateInput()
+    BorderFX.update(dt)
     Particles.update(dt)
     Achievements.update(dt)
+    Logger.heartbeat(game.state, game.level, game.score, game.lives)
 
     -- Screen shake decay
     if game.shakeDuration > 0 then
@@ -804,6 +823,21 @@ function love.update(dt)
                 end
                 game:saveHighScore()
                 game.state = "GAME_OVER"
+                game.gameOverAnim = {
+                    timer = 0,
+                    cardY = 480,
+                    targetCardY = 22,
+                    displayScore = 0,
+                    tallySpeed = math.max(120, math.floor(game.score / 1.0)),
+                    tallyDone = (game.score == 0),
+                    rankRevealed = (game.score == 0),
+                    inputLockout = 0.5,
+                    selectedButton = 1,
+                    sparkTimer = 0,
+                    shimmer = 0
+                }
+                Logger.info("GAME", "Game Over! Score: %d | Level: %d | Cuts: %d | New Record: %s",
+                    game.score, game.level, game.totalCuts or 0, tostring(game.isNewRecord))
             end
         end
 
@@ -817,8 +851,43 @@ function love.update(dt)
         -- In SHOWCASE mode: holds indefinitely so user can admire the art until pressing A
 
     elseif game.state == "GAME_OVER" then
-        if love.keyboard.isDown("return", "space") or game.input.fastDraw or game.input.slowDraw then
-            game.state = "TITLE"
+        if game.gameOverAnim then
+            local anim = game.gameOverAnim
+            anim.timer = anim.timer + dt
+            anim.shimmer = (anim.shimmer + dt * 2.5) % 6.28
+            if anim.inputLockout > 0 then
+                anim.inputLockout = anim.inputLockout - dt
+            end
+
+            -- Smooth spring slide-up
+            anim.cardY = anim.cardY + (anim.targetCardY - anim.cardY) * math.min(1, dt * 8)
+
+            -- Rolling score count-up
+            if not anim.tallyDone then
+                anim.displayScore = math.min(game.score, anim.displayScore + math.ceil(anim.tallySpeed * dt))
+                if anim.displayScore >= game.score then
+                    anim.displayScore = game.score
+                    anim.tallyDone = true
+                    if not anim.rankRevealed then
+                        anim.rankRevealed = true
+                        Audio.play("bonus")
+                        local rx = 50 + 330 + 90
+                        local ry = anim.cardY + 48 + 47
+                        Particles.spawnCaptureBurst(rx, ry, true, 20)
+                    end
+                end
+            end
+
+            -- Periodic celebratory confetti sparks if new all-time record
+            if game.isNewRecord then
+                anim.sparkTimer = anim.sparkTimer + dt
+                if anim.sparkTimer >= 0.15 then
+                    anim.sparkTimer = 0
+                    local sx = love.math.random(60, 580)
+                    local sy = love.math.random(30, 440)
+                    Particles.spawnCutSpark(sx, sy, love.math.random(-1, 1), love.math.random(-1, 1), love.math.random() > 0.5)
+                end
+            end
         end
     end
 end
@@ -1050,14 +1119,34 @@ function love.gamepadpressed(joystick, button)
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
-        if button == "a" or button == "b" or button == "start" or button == "back" then
+        if button == "dpleft" or button == "leftshoulder" then
+            game.howToPage = math.max(1, (game.howToPage or 1) - 1)
+            Audio.play("tick")
+        elseif button == "dpright" or button == "rightshoulder" then
+            game.howToPage = math.min(2, (game.howToPage or 1) + 1)
+            Audio.play("tick")
+        elseif button == "a" or button == "b" or button == "start" or button == "back" then
             game.state = "TITLE"
             Audio.play("tick")
         end
     elseif game.state == "GAME_OVER" then
-        if button == "a" or button == "start" then
-            Audio.play("start")
-            game:startNewGame()
+        if game.gameOverAnim and game.gameOverAnim.inputLockout and game.gameOverAnim.inputLockout > 0 then
+            return
+        end
+        if button == "dpleft" or button == "dpup" then
+            if game.gameOverAnim then game.gameOverAnim.selectedButton = 1 end
+            Audio.play("tick")
+        elseif button == "dpright" or button == "dpdown" then
+            if game.gameOverAnim then game.gameOverAnim.selectedButton = 2 end
+            Audio.play("tick")
+        elseif button == "a" or button == "start" then
+            if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
+                Audio.play("tick")
+                game.state = "TITLE"
+            else
+                Audio.play("start")
+                game:startNewGame()
+            end
         elseif button == "b" or button == "back" then
             Audio.play("tick")
             game.state = "TITLE"
@@ -1075,7 +1164,10 @@ end
 
 function love.mousepressed(x, y, button)
     if game.state == "GAME_OVER" then
-        if y >= 340 and y <= 405 and x >= 330 and x <= 550 then
+        if game.gameOverAnim and game.gameOverAnim.inputLockout and game.gameOverAnim.inputLockout > 0 then
+            return
+        end
+        if y >= 320 and y <= 390 and x >= 290 and x <= 530 then
             Audio.play("tick")
             game.state = "TITLE"
         else
@@ -1155,14 +1247,34 @@ function love.keypressed(key)
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
-        if key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
+        if key == "left" or key == "a" then
+            game.howToPage = math.max(1, (game.howToPage or 1) - 1)
+            Audio.play("tick")
+        elseif key == "right" or key == "d" then
+            game.howToPage = math.min(2, (game.howToPage or 1) + 1)
+            Audio.play("tick")
+        elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
             game.state = "TITLE"
             Audio.play("tick")
         end
     elseif game.state == "GAME_OVER" then
-        if key == "return" or key == "space" or key == "a" or key == "z" then
-            Audio.play("start")
-            game:startNewGame()
+        if game.gameOverAnim and game.gameOverAnim.inputLockout and game.gameOverAnim.inputLockout > 0 then
+            return
+        end
+        if key == "left" or key == "up" or key == "w" then
+            if game.gameOverAnim then game.gameOverAnim.selectedButton = 1 end
+            Audio.play("tick")
+        elseif key == "right" or key == "down" or key == "s" then
+            if game.gameOverAnim then game.gameOverAnim.selectedButton = 2 end
+            Audio.play("tick")
+        elseif key == "return" or key == "space" or key == "z" or key == "j" then
+            if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
+                Audio.play("tick")
+                game.state = "TITLE"
+            else
+                Audio.play("start")
+                game:startNewGame()
+            end
         elseif key == "escape" or key == "b" or key == "x" then
             Audio.play("tick")
             game.state = "TITLE"
@@ -1215,6 +1327,11 @@ function love.draw()
         -- Draw Playfield Grid (uncovering background image)
         game.grid:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
 
+        -- Draw High-Energy Neon Shimmer Border Loader (Dual corner beams, glint sweep & neon aura)
+        local boardW = game.grid.width * game.scaleX
+        local boardH = game.grid.height * game.scaleY
+        BorderFX.draw(game.offsetX, game.offsetY, boardW, boardH)
+
         -- Draw Floating Power Crystals (Level 4+)
         if #game.crystals > 0 then
             Crystals.drawList(game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
@@ -1256,16 +1373,25 @@ function love.draw()
             end
         end
 
-        -- Draw Active Banner Alert (e.g. MASSIVE CUT, TARGET NEAR, SPLIT-QIX)
+        -- Draw Active Banner Alert (Large, prominent announcement font for handheld screen)
         if game.bannerTimer > 0 and game.bannerText then
-            local alpha = math.min(1, game.bannerTimer * 2)
-            love.graphics.setColor(0, 0, 0, 0.88 * alpha)
-            love.graphics.rectangle("fill", 50, 34, 540, 26, 4, 4)
-            love.graphics.setColor(0, 0.95, 1, alpha)
-            love.graphics.rectangle("line", 50, 34, 540, 26, 4, 4)
-            love.graphics.setColor(1, 0.9, 0.1, alpha)
-            love.graphics.setFont(game.fontSmall)
-            love.graphics.printf(game.bannerText, 50, 41, 540, "center")
+            local alpha = math.min(1, game.bannerTimer * 2.5)
+            local pulse = 0.85 + 0.15 * math.sin(love.timer.getTime() * 10)
+            local bx, by, bw, bh = 24, 34, 592, 42
+            -- Translucent dark glass backdrop
+            love.graphics.setColor(0.03, 0.05, 0.09, 0.94 * alpha)
+            love.graphics.rectangle("fill", bx, by, bw, bh, 6, 6)
+            -- Glowing neon border
+            love.graphics.setLineWidth(2)
+            love.graphics.setColor(0.0, 0.95, 1.0, alpha * pulse)
+            love.graphics.rectangle("line", bx, by, bw, bh, 6, 6)
+            -- Text shadow
+            love.graphics.setFont(game.fontMid)
+            love.graphics.setColor(0, 0, 0, 0.85 * alpha)
+            love.graphics.printf(game.bannerText, bx + 2, by + 12, bw, "center")
+            -- Vibrant announcement text
+            love.graphics.setColor(1.0, 0.88, 0.15, alpha)
+            love.graphics.printf(game.bannerText, bx, by + 10, bw, "center")
         end
 
         -- Overlay States
@@ -1540,80 +1666,188 @@ function game:drawHowTo()
     end
 
     -- Dark backdrop overlay
-    love.graphics.setColor(0.02, 0.03, 0.05, 0.82)
+    love.graphics.setColor(0.02, 0.03, 0.05, 0.88)
     love.graphics.rectangle("fill", 0, 0, 640, 480)
 
     -- Instructions Modal Box
-    local mx, my, mw, mh = 36, 24, 568, 432
-    love.graphics.setColor(0.04, 0.06, 0.11, 0.94)
-    love.graphics.rectangle("fill", mx, my, mw, mh, 8, 8)
+    local mx, my, mw, mh = 26, 16, 588, 448
+    love.graphics.setColor(0.04, 0.06, 0.11, 0.96)
+    love.graphics.rectangle("fill", mx, my, mw, mh, 10, 10)
 
     love.graphics.setLineWidth(2)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.9)
-    love.graphics.rectangle("line", mx, my, mw, mh, 8, 8)
+    love.graphics.rectangle("line", mx, my, mw, mh, 10, 10)
 
-    -- Header
+    -- Header Title
     love.graphics.setFont(game.fontMid)
     love.graphics.setColor(1.0, 0.85, 0.2, 1.0)
-    love.graphics.printf("★ HOW TO PLAY & RULES ★", mx, my + 16, mw, "center")
+    love.graphics.printf("★ HOW TO PLAY & RULES ★", mx, my + 14, mw, "center")
 
+    -- Page Switcher Pills
+    local curPage = game.howToPage or 1
+    local tabW = 260
+    local tabH = 26
+    local tabY = my + 44
+    local tab1X = mx + 26
+    local tab2X = mx + mw - 26 - tabW
+
+    -- Tab 1
+    if curPage == 1 then
+        love.graphics.setColor(0.0, 0.55, 0.85, 0.9)
+        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH, 5, 5)
+        love.graphics.setColor(1, 1, 1, 1)
+    else
+        love.graphics.setColor(0.06, 0.10, 0.16, 0.85)
+        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH, 5, 5)
+        love.graphics.setColor(0.55, 0.65, 0.78, 1)
+    end
+    love.graphics.setFont(game.font)
+    love.graphics.printf("1. RULES & CONTROLS", tab1X, tabY + 6, tabW, "center")
+
+    -- Tab 2
+    if curPage == 2 then
+        love.graphics.setColor(0.0, 0.55, 0.85, 0.9)
+        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH, 5, 5)
+        love.graphics.setColor(1, 1, 1, 1)
+    else
+        love.graphics.setColor(0.06, 0.10, 0.16, 0.85)
+        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH, 5, 5)
+        love.graphics.setColor(0.55, 0.65, 0.78, 1)
+    end
+    love.graphics.setFont(game.font)
+    love.graphics.printf("2. THREATS & CRYSTALS", tab2X, tabY + 6, tabW, "center")
+
+    -- Divider
     love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.0, 0.85, 1.0, 0.4)
-    love.graphics.line(mx + 30, my + 44, mx + mw - 30, my + 44)
+    love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
+    love.graphics.line(mx + 20, my + 78, mx + mw - 20, my + 78)
 
-    -- Content Sections
-    love.graphics.setFont(game.fontSmall)
+    -- PAGE 1: OBJECTIVE & DUAL DRAW CONTROLS
+    if curPage == 1 then
+        local cy = my + 88
 
-    -- 1. Objective
-    love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-    love.graphics.print("MISSION OBJECTIVE:", mx + 24, my + 56)
-    love.graphics.setColor(0.9, 0.92, 0.96, 1.0)
-    love.graphics.printf("Draw Stix lines into the playfield to capture territory. Claim 75% or more to unveil the full artwork and advance!", mx + 24, my + 74, mw - 48, "left")
+        -- Section 1: Objective
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
+        love.graphics.print("► MISSION OBJECTIVE:", mx + 24, cy)
 
-    -- 2. Dual Draw Controls
-    love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-    love.graphics.print("DUAL DRAW CONTROLS:", mx + 24, my + 116)
+        love.graphics.setColor(0.92, 0.94, 0.98, 1.0)
+        love.graphics.printf("Draw Stix lines into the playfield to enclose territory. Claim 75% or more of the grid to unveil the full hidden artwork and clear the round!", mx + 24, cy + 20, mw - 48, "left")
 
-    love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-    love.graphics.print("FAST DRAW (A / Space):", mx + 24, my + 134)
-    love.graphics.setColor(0.85, 0.88, 0.92, 1.0)
-    love.graphics.print("Standard speed, 1X points. Ideal for fast escapes.", mx + 225, my + 134)
+        cy = cy + 62
 
-    love.graphics.setColor(1.0, 0.45, 0.1, 1.0)
-    love.graphics.print("SLOW DRAW (B / X):", mx + 24, my + 154)
-    love.graphics.setColor(0.85, 0.88, 0.92, 1.0)
-    love.graphics.print("Half speed, but DOUBLE 2X POINTS & high risk!", mx + 225, my + 154)
+        -- Section 2: Dual Draw Controls
+        love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
+        love.graphics.print("► DUAL DRAW SPEED CONTROLS:", mx + 24, cy)
 
-    -- 3. Hazards
-    love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-    love.graphics.print("HAZARDS & THREATS:", mx + 24, my + 188)
+        cy = cy + 22
+        -- Fast Draw Card
+        love.graphics.setColor(0.06, 0.12, 0.20, 0.9)
+        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.5)
+        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 52, 6, 6)
 
-    love.graphics.setColor(1.0, 0.25, 0.8, 1.0)
-    love.graphics.print("THE QIX:", mx + 24, my + 206)
-    love.graphics.setColor(0.85, 0.88, 0.92, 1.0)
-    love.graphics.print("Chaotic helix. Instant death if it strikes your drawing line!", mx + 115, my + 206)
+        love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
+        love.graphics.print("FAST DRAW  [ (A) / SPACE ]", mx + 36, cy + 8)
+        love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
+        love.graphics.print("Standard speed, 1X points. Best for quick slicing & escapes.", mx + 36, cy + 28)
 
-    love.graphics.setColor(1.0, 0.85, 0.2, 1.0)
-    love.graphics.print("SPARX:", mx + 24, my + 226)
-    love.graphics.setColor(0.85, 0.88, 0.92, 1.0)
-    love.graphics.print("Patrol perimeter borders. Mutate into deadly Super Sparx!", mx + 115, my + 226)
+        cy = cy + 60
+        -- Slow Draw Card
+        love.graphics.setColor(0.20, 0.08, 0.04, 0.9)
+        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 52, 6, 6)
+        love.graphics.setColor(1.0, 0.45, 0.1, 0.6)
+        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 52, 6, 6)
 
-    love.graphics.setColor(1.0, 0.25, 0.25, 1.0)
-    love.graphics.print("THE FUSE:", mx + 24, my + 246)
-    love.graphics.setColor(0.85, 0.88, 0.92, 1.0)
-    love.graphics.print("Stopping or idling while drawing ignites a fuse along your trail!", mx + 115, my + 246)
+        love.graphics.setColor(1.0, 0.50, 0.15, 1.0)
+        love.graphics.print("SLOW DRAW  [ (B) / (X) / SHIFT ]", mx + 36, cy + 8)
+        love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
+        love.graphics.print("Half speed, but awards DOUBLE 2X POINTS & massive score boosts!", mx + 36, cy + 28)
 
-    -- 4. Classic 1981 Split-Qix Rule
-    love.graphics.setColor(1.0, 0.85, 0.15, 1.0)
-    love.graphics.print("★ CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", mx + 24, my + 280)
-    love.graphics.setColor(0.92, 0.94, 0.98, 1.0)
-    love.graphics.printf("In higher levels, TWO Qixes roam the screen! If you slice between them and trap them in separate compartments, you INSTANTLY WIN the round and unlock a permanent Score Multiplier (2X up to 9X)!", mx + 24, my + 298, mw - 48, "left")
+        cy = cy + 60
+        -- Section 3: Split-Qix Rule
+        love.graphics.setColor(1.0, 0.85, 0.20, 1.0)
+        love.graphics.print("★ CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", mx + 24, cy)
 
-    -- Footer Prompt
+        love.graphics.setColor(0.92, 0.94, 0.98, 1.0)
+        love.graphics.printf("In higher levels, TWO Qixes roam the field! Slice between them into separate compartments to INSTANTLY WIN the round and unlock a permanent Score Multiplier (2X up to 9X)!", mx + 24, cy + 20, mw - 48, "left")
+
+    -- PAGE 2: HAZARDS & TACTICAL CRYSTALS
+    else
+        local cy = my + 88
+
+        -- Section 1: Hazards
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(1.0, 0.35, 0.45, 1.0)
+        love.graphics.print("► ENEMY THREATS & HAZARDS:", mx + 24, cy)
+
+        cy = cy + 22
+        -- Hazard 1: Qix
+        love.graphics.setColor(1.0, 0.25, 0.85, 1.0)
+        love.graphics.print("THE QIX:", mx + 32, cy)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Chaotic helix. Striking your active stix line is fatal!", mx + 130, cy)
+
+        cy = cy + 24
+        -- Hazard 2: Sparx
+        love.graphics.setColor(1.0, 0.80, 0.15, 1.0)
+        love.graphics.print("SPARX:", mx + 32, cy)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Patrol borders. Mutate into deadly Super Sparx on timeout!", mx + 130, cy)
+
+        cy = cy + 24
+        -- Hazard 3: Fuse
+        love.graphics.setColor(1.0, 0.30, 0.30, 1.0)
+        love.graphics.print("THE FUSE:", mx + 32, cy)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Stopping while drawing ignites a fuse that burns your line!", mx + 130, cy)
+
+        cy = cy + 34
+        -- Section 2: Tactical Power Crystals
+        love.graphics.setColor(0.2, 0.95, 0.6, 1.0)
+        love.graphics.print("► TACTICAL POWER CRYSTALS (LEVEL 4+):", mx + 24, cy)
+        love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
+        love.graphics.printf("Enclose floating crystals inside claimed zones to activate boosts:", mx + 24, cy + 20, mw - 48, "left")
+
+        cy = cy + 44
+        -- Crystal 1: Freeze
+        love.graphics.setColor(0.08, 0.14, 0.22, 0.9)
+        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(0.1, 0.9, 1.0, 0.6)
+        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(0.1, 0.9, 1.0, 1.0)
+        love.graphics.print("❄ CHRONO FREEZE", mx + 36, cy + 10)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Stops all enemy movement for 4.5 seconds!", mx + 215, cy + 10)
+
+        cy = cy + 44
+        -- Crystal 2: Bonus
+        love.graphics.setColor(0.20, 0.16, 0.05, 0.9)
+        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(1.0, 0.85, 0.1, 0.6)
+        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(1.0, 0.85, 0.1, 1.0)
+        love.graphics.print("★ STAR CACHE", mx + 36, cy + 10)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Instant +5,000 points added to your score!", mx + 215, cy + 10)
+
+        cy = cy + 44
+        -- Crystal 3: Shield
+        love.graphics.setColor(0.06, 0.18, 0.10, 0.9)
+        love.graphics.rectangle("fill", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(0.2, 1.0, 0.4, 0.6)
+        love.graphics.rectangle("line", mx + 24, cy, mw - 48, 38, 5, 5)
+        love.graphics.setColor(0.2, 1.0, 0.4, 1.0)
+        love.graphics.print("🛡 SHIELD MATRIX", mx + 36, cy + 10)
+        love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
+        love.graphics.print("Awards +1 Extra Life and temporary invulnerability!", mx + 215, cy + 10)
+    end
+
+    -- Footer Navigation Guidance
     local pulse = 0.5 + 0.5 * math.sin(self.titleBlink * 3)
     love.graphics.setColor(0.2, 1.0, 0.4, 0.7 + 0.3 * pulse)
-    love.graphics.setFont(game.fontSmall)
-    love.graphics.printf("PRESS (B) OR (A) TO RETURN TO MAIN MENU", mx, my + 396, mw, "center")
+    love.graphics.setFont(game.font)
+    love.graphics.printf("◄/►: SWITCH PAGE   •   PRESS (A) OR (B) TO RETURN", mx, my + 418, mw, "center")
 end
 
 function game:drawBadgesGallery()
@@ -1904,91 +2138,121 @@ local function getPilotRank(score)
 end
 
 function game:drawGameOver()
-    -- 1. Dim Backdrop
-    love.graphics.setColor(0.02, 0.03, 0.06, 0.88)
+    local anim = self.gameOverAnim or {
+        cardY = 22,
+        displayScore = self.score,
+        tallyDone = true,
+        rankRevealed = true,
+        selectedButton = 1,
+        shimmer = 0
+    }
+
+    -- 1. Dim Backdrop with animated cyber grid
+    love.graphics.setColor(0.02, 0.03, 0.06, 0.90)
     love.graphics.rectangle("fill", 0, 0, 640, 480)
 
-    -- 2. Mission Debriefing Card Frame
-    local cardX, cardY, cardW, cardH = 50, 26, 540, 428
-    love.graphics.setColor(0.04, 0.06, 0.10, 0.96)
+    -- 2. Mission Debriefing Card Frame (smoothly animated entry from bottom)
+    local cardX = 46
+    local cardY = math.floor(anim.cardY or 22)
+    local cardW = 548
+    local cardH = 436
+
+    -- Card shadow
+    love.graphics.setColor(0, 0, 0, 0.7)
+    love.graphics.rectangle("fill", cardX + 4, cardY + 4, cardW, cardH, 10, 10)
+
+    -- Card background
+    love.graphics.setColor(0.04, 0.06, 0.10, 0.97)
     love.graphics.rectangle("fill", cardX, cardY, cardW, cardH, 10, 10)
 
+    -- Pulsing animated border
     local pulse = 0.8 + 0.2 * math.sin(love.timer.getTime() * 5)
-    if self.isNewRecord then
-        love.graphics.setColor(1.0, 0.82, 0.15, 0.95 * pulse)
-    else
-        love.graphics.setColor(0.0, 0.80, 1.0, 0.75)
-    end
     love.graphics.setLineWidth(2)
+    if self.isNewRecord then
+        love.graphics.setColor(1.0, 0.85, 0.15, 0.95 * pulse)
+    else
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.85 * pulse)
+    end
     love.graphics.rectangle("line", cardX, cardY, cardW, cardH, 10, 10)
 
     -- Header Divider
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.line(cardX + 24, cardY + 42, cardX + cardW - 24, cardY + 42)
+    love.graphics.line(cardX + 20, cardY + 44, cardX + cardW - 20, cardY + 44)
 
     -- Top Header Title
     love.graphics.setFont(game.fontMid)
     if self.isNewRecord then
         love.graphics.setColor(1.0, 0.88, 0.20, 1.0)
-        love.graphics.printf("★ NEW ALL-TIME RECORD ACHIEVED! ★", cardX, cardY + 12, cardW, "center")
+        love.graphics.printf("★ NEW ALL-TIME RECORD ACHIEVED! ★", cardX, cardY + 14, cardW, "center")
     else
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.printf("MISSION DEBRIEFING", cardX, cardY + 12, cardW, "center")
+        love.graphics.printf("★ MISSION DEBRIEFING ★", cardX, cardY + 14, cardW, "center")
     end
 
     -- 3. Upper Hero Section: Final Score & Pilot Rank Badge
     local rank = getPilotRank(self.score)
 
     -- Final Score Callout (Left)
-    love.graphics.setFont(game.fontSmall)
+    love.graphics.setFont(game.font)
     love.graphics.setColor(0.55, 0.75, 0.95, 0.9)
-    love.graphics.print("FINAL SCORE", cardX + 30, cardY + 52)
+    love.graphics.print("FINAL SCORE", cardX + 30, cardY + 54)
 
+    local scoreStr = string.format("%06d", anim.displayScore or self.score)
     love.graphics.setFont(game.fontBig)
-    -- Glow effect
-    love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.print(string.format("%06d", self.score), cardX + 32, cardY + 70)
+    -- Glow shadow
+    love.graphics.setColor(0.0, 0.85, 1.0, 0.4)
+    love.graphics.print(scoreStr, cardX + 32, cardY + 74)
     -- Main text
     love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    love.graphics.print(string.format("%06d", self.score), cardX + 30, cardY + 68)
+    love.graphics.print(scoreStr, cardX + 30, cardY + 72)
 
-    love.graphics.setFont(game.fontSmall)
+    love.graphics.setFont(game.font)
     if self.isNewRecord then
         love.graphics.setColor(0.25, 1.0, 0.55, 1.0)
-        love.graphics.print("NEW HIGH SCORE RECORD SURPASSED!", cardX + 30, cardY + 114)
+        love.graphics.print("★ NEW HIGH SCORE RECORD SURPASSED! ★", cardX + 30, cardY + 116)
     else
         love.graphics.setColor(0.70, 0.78, 0.88, 0.85)
-        love.graphics.print(string.format("ALL-TIME RECORD: %06d", self.highScore), cardX + 30, cardY + 114)
+        love.graphics.print(string.format("ALL-TIME RECORD: %06d", self.highScore), cardX + 30, cardY + 116)
     end
 
     -- Pilot Rank Badge (Right)
-    local rx, ry, rw, rh = cardX + 330, cardY + 48, 180, 94
+    local rx, ry, rw, rh = cardX + 330, cardY + 50, 188, 92
     love.graphics.setColor(0.08, 0.11, 0.18, 0.92)
     love.graphics.rectangle("fill", rx, ry, rw, rh, 8, 8)
 
-    love.graphics.setLineWidth(1.5)
-    love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.9)
+    love.graphics.setLineWidth(2)
+    if anim.rankRevealed then
+        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
+    else
+        love.graphics.setColor(0.3, 0.4, 0.5, 0.6)
+    end
     love.graphics.rectangle("line", rx, ry, rw, rh, 8, 8)
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.65, 0.72, 0.85, 1.0)
     love.graphics.printf("PILOT RANK", rx, ry + 8, rw, "center")
 
-    love.graphics.setFont(game.fontBig)
-    love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 1.0)
-    love.graphics.printf(rank.grade, rx, ry + 24, rw, "center")
+    if anim.rankRevealed then
+        love.graphics.setFont(game.fontBig)
+        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 1.0)
+        love.graphics.printf(rank.grade, rx, ry + 24, rw, "center")
 
-    love.graphics.setFont(game.fontSmall)
-    love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
-    love.graphics.printf(rank.title, rx, ry + 66, rw, "center")
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
+        love.graphics.printf(rank.title, rx, ry + 64, rw, "center")
+    else
+        love.graphics.setFont(game.font)
+        local pulseT = 0.5 + 0.5 * math.sin(love.timer.getTime() * 8)
+        love.graphics.setColor(0.0, 0.95, 1.0, 0.5 + 0.5 * pulseT)
+        love.graphics.printf("[ EVALUATING ]", rx, ry + 40, rw, "center")
+    end
 
-    -- 4. Four Modern Bento Statistics Tiles
-    local tw, th = 230, 62
-    local tx1, tx2 = cardX + 30, cardX + 280
-    local ty1, ty2 = cardY + 154, cardY + 226
+    -- 4. Four Bento Statistics Tiles
+    local tw, th = 234, 60
+    local tx1, tx2 = cardX + 30, cardX + 284
+    local ty1, ty2 = cardY + 152, cardY + 224
 
-    -- Reusable tile renderer
     local function drawStatTile(x, y, label, value, valColor)
         love.graphics.setColor(0.07, 0.09, 0.15, 0.9)
         love.graphics.rectangle("fill", x, y, tw, th, 6, 6)
@@ -2010,43 +2274,56 @@ function game:drawGameOver()
     drawStatTile(tx1, ty2, "BEST SINGLE CUT", string.format("%.1f%%", self.bestCutPercent or 0), {1.0, 0.85, 0.20})
     drawStatTile(tx2, ty2, "TOTAL STIX LINES", string.format("%d CUTS", self.totalCuts or 0), {1.0, 0.35, 0.85})
 
-    -- 5. Lower Action Pill Buttons
-    local sepY = cardY + 302
+    -- 5. Lower Action Pill Buttons (with Interactive Navigation Highlight)
+    local sepY = cardY + 300
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.line(cardX + 24, sepY, cardX + cardW - 24, sepY)
+    love.graphics.line(cardX + 20, sepY, cardX + cardW - 20, sepY)
 
-    local bw, bh = 220, 44
-    local bx1 = cardX + 35
-    local bx2 = cardX + 285
-    local by = cardY + 316
+    local bw, bh = 224, 44
+    local bx1 = cardX + 32
+    local bx2 = cardX + 292
+    local by = cardY + 314
+    local selBtn = anim.selectedButton or 1
 
     -- Button 1: Play Again
-    love.graphics.setColor(0.04, 0.28, 0.16, 0.85)
+    local btn1Pulse = (selBtn == 1) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
+    if selBtn == 1 then
+        love.graphics.setColor(0.04, 0.38, 0.20, 0.95)
+    else
+        love.graphics.setColor(0.04, 0.16, 0.10, 0.7)
+    end
     love.graphics.rectangle("fill", bx1, by, bw, bh, 8, 8)
-    love.graphics.setLineWidth(2)
-    love.graphics.setColor(0.20, 1.0, 0.50, 0.90 * pulse)
+    love.graphics.setLineWidth((selBtn == 1) and 2 or 1)
+    love.graphics.setColor(0.20, 1.0, 0.50, btn1Pulse)
     love.graphics.rectangle("line", bx1, by, bw, bh, 8, 8)
 
     love.graphics.setFont(game.fontMid)
     love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    love.graphics.printf("(A) PLAY AGAIN", bx1, by + 10, bw, "center")
+    local btn1Text = (selBtn == 1) and "► (A) PLAY AGAIN" or "(A) PLAY AGAIN"
+    love.graphics.printf(btn1Text, bx1, by + 12, bw, "center")
 
     -- Button 2: Main Menu
-    love.graphics.setColor(0.08, 0.11, 0.18, 0.85)
+    local btn2Pulse = (selBtn == 2) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
+    if selBtn == 2 then
+        love.graphics.setColor(0.12, 0.22, 0.40, 0.95)
+    else
+        love.graphics.setColor(0.06, 0.09, 0.15, 0.7)
+    end
     love.graphics.rectangle("fill", bx2, by, bw, bh, 8, 8)
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.35, 0.45, 0.65, 0.75)
+    love.graphics.setLineWidth((selBtn == 2) and 2 or 1)
+    love.graphics.setColor(0.35, 0.75, 1.0, btn2Pulse)
     love.graphics.rectangle("line", bx2, by, bw, bh, 8, 8)
 
     love.graphics.setFont(game.fontMid)
-    love.graphics.setColor(0.80, 0.86, 0.95, 0.90)
-    love.graphics.printf("(B) MAIN MENU", bx2, by + 10, bw, "center")
+    love.graphics.setColor(0.85, 0.90, 1.0, 1.0)
+    local btn2Text = (selBtn == 2) and "► (B) MAIN MENU" or "(B) MAIN MENU"
+    love.graphics.printf(btn2Text, bx2, by + 12, bw, "center")
 
     -- Footer Guidance
-    love.graphics.setFont(game.fontSmall)
-    love.graphics.setColor(0.50, 0.60, 0.75, 0.90)
-    love.graphics.printf("GAMEPAD: (A) RETRY  •  (B) MENU   |   KEYBOARD: SPACE/ENTER  •  ESC", 0, cardY + 382, 640, "center")
+    love.graphics.setFont(game.font)
+    love.graphics.setColor(0.55, 0.68, 0.85, 0.95)
+    love.graphics.printf("◄/►: CHOOSE   •   (A)/START: CONFIRM   •   (B): MENU", 0, cardY + 386, 640, "center")
 end
 
 return game

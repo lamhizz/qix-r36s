@@ -45,6 +45,14 @@ function Player:reset(cfg)
 
     self.usedFastThisLevel = false
 
+    -- Corner Snapping & Pre-Turn Assist state
+    self.lastMoveDirX = 0
+    self.lastMoveDirY = 0
+    self.turnBufferDx = 0
+    self.turnBufferDy = 0
+    self.turnBufferTimer = 0
+    self.turnBufferDuration = 0.120 -- 120ms input buffer
+
     if cfg then
         self:applyDifficulty(cfg)
     end
@@ -56,6 +64,12 @@ function Player:applyDifficulty(cfg)
     self.shieldTimer = self.shieldDuration
     self.fuseDelay = cfg.fuseDelay or 0.75
     self.fuseBurnSpeed = cfg.fuseBurnSpeed or 42
+end
+
+function Player:clearTurnBuffer()
+    self.turnBufferTimer = 0
+    self.turnBufferDx = 0
+    self.turnBufferDy = 0
 end
 
 function Player:respawn()
@@ -89,6 +103,9 @@ function Player:respawn()
     self.fuseActive = false
     self.fuseIndex = 1
     self.shieldTimer = self.shieldDuration
+    self.lastMoveDirX = 0
+    self.lastMoveDirY = 0
+    self:clearTurnBuffer()
 end
 
 function Player:isShielded()
@@ -97,6 +114,133 @@ end
 
 function Player:isDrawing()
     return self.state == STATE_DRAWING
+end
+
+-- Dynamic turn-assist threshold: playerSpeed * 1.5 in effective frame movement window,
+-- clamped to a safe, reliable window (4 to 8 grid units = ~7 to 14px on R36S 640x480 screen)
+function Player:getSnapTolerance(speed, dt)
+    local effDt = dt or (1 / 60)
+    local dynamicUnits = (speed * effDt) * 1.5
+    return math.max(4, math.min(8, math.floor(dynamicUnits + 0.5)))
+end
+
+-- Checks if a corner in the target direction exists ahead along current travel axis
+function Player:hasCornerAhead(alongDx, alongDy, targetDx, targetDy, maxDist)
+    if alongDx == 0 and alongDy == 0 then return false end
+    for dist = 1, maxDist do
+        local cx = self.x + dist * alongDx
+        local cy = self.y + dist * alongDy
+        if not (self.grid:inBounds(cx, cy) and self.grid:isBorder(cx, cy)) then
+            break
+        end
+        local tNx = cx + targetDx
+        local tNy = cy + targetDy
+        if self.grid:inBounds(tNx, tNy) and self.grid:isBorder(tNx, tNy) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Searches for an intersecting valid perimeter path within SNAP_TOLERANCE ahead or behind
+function Player:findPerimeterTurn(targetDx, targetDy, snapTolerance)
+    if not self.grid then return false end
+
+    -- 1. Check if turn is directly valid right at current position (already at corner)
+    local curNx = self.x + targetDx
+    local curNy = self.y + targetDy
+    if self.grid:inBounds(curNx, curNy) and self.grid:isBorder(curNx, curNy) then
+        return true, self.x, self.y
+    end
+
+    -- 2. Search ahead and behind along the current perimeter axis
+    if targetDy ~= 0 then
+        -- Perpendicular input is vertical -> along-axis must be horizontal
+        local primaryDir = (self.lastMoveDirX ~= 0) and self.lastMoveDirX or 1
+        -- Ahead search
+        for dist = 1, snapTolerance do
+            local cx = self.x + dist * primaryDir
+            local cy = self.y
+            if not (self.grid:inBounds(cx, cy) and self.grid:isBorder(cx, cy)) then
+                break
+            end
+            local tNx = cx + targetDx
+            local tNy = cy + targetDy
+            if self.grid:inBounds(tNx, tNy) and self.grid:isBorder(tNx, tNy) then
+                return true, cx, cy
+            end
+        end
+        -- Behind search
+        for dist = 1, snapTolerance do
+            local cx = self.x - dist * primaryDir
+            local cy = self.y
+            if not (self.grid:inBounds(cx, cy) and self.grid:isBorder(cx, cy)) then
+                break
+            end
+            local tNx = cx + targetDx
+            local tNy = cy + targetDy
+            if self.grid:inBounds(tNx, tNy) and self.grid:isBorder(tNx, tNy) then
+                return true, cx, cy
+            end
+        end
+    elseif targetDx ~= 0 then
+        -- Perpendicular input is horizontal -> along-axis must be vertical
+        local primaryDir = (self.lastMoveDirY ~= 0) and self.lastMoveDirY or 1
+        -- Ahead search
+        for dist = 1, snapTolerance do
+            local cx = self.x
+            local cy = self.y + dist * primaryDir
+            if not (self.grid:inBounds(cx, cy) and self.grid:isBorder(cx, cy)) then
+                break
+            end
+            local tNx = cx + targetDx
+            local tNy = cy + targetDy
+            if self.grid:inBounds(tNx, tNy) and self.grid:isBorder(tNx, tNy) then
+                return true, cx, cy
+            end
+        end
+        -- Behind search
+        for dist = 1, snapTolerance do
+            local cx = self.x
+            local cy = self.y - dist * primaryDir
+            if not (self.grid:inBounds(cx, cy) and self.grid:isBorder(cx, cy)) then
+                break
+            end
+            local tNx = cx + targetDx
+            local tNy = cy + targetDy
+            if self.grid:inBounds(tNx, tNy) and self.grid:isBorder(tNx, tNy) then
+                return true, cx, cy
+            end
+        end
+    end
+
+    return false
+end
+
+-- Executes corner snap and commits movement onto the intersecting path
+function Player:trySnapTurn(targetDx, targetDy, snapTolerance)
+    local found, snapX, snapY = self:findPerimeterTurn(targetDx, targetDy, snapTolerance)
+    if found then
+        -- Smoothly snap primary coordinate to intersection axis
+        self.x = snapX
+        self.y = snapY
+
+        -- Commit movement onto intersecting path
+        local nx = self.x + targetDx
+        local ny = self.y + targetDy
+        if self.grid:inBounds(nx, ny) and self.grid:isBorder(nx, ny) then
+            self.x = nx
+            self.y = ny
+        end
+
+        self.lastMoveDirX = targetDx
+        self.lastMoveDirY = targetDy
+        self:clearTurnBuffer()
+        self.moveAccumulator = 0
+        Audio.play("tick")
+        return true
+    end
+    return false
 end
 
 function Player:update(dt, input, qixList, onAreaCaptured, onDeath, offsetX, offsetY, scaleX, scaleY)
@@ -108,65 +252,209 @@ function Player:update(dt, input, qixList, onAreaCaptured, onDeath, offsetX, off
     end
 
     local wantsDraw = input.fastDraw or input.slowDraw
-    local hasMove = (input.dx ~= 0) or (input.dy ~= 0)
 
-    local speed = 0
-    if self.state == STATE_BORDER then
-        speed = 160 -- Border traversal pacing
-    else
-        speed = self.isSlow and 48 or 95 -- Slow draw vs Fast draw
+    -- When drawing stix inside playfield, or explicitly initiating a Draw into open territory
+    if self.state == STATE_DRAWING or wantsDraw then
+        self:clearTurnBuffer()
+        local hasMove = (input.dx ~= 0) or (input.dy ~= 0)
+        local speed = (self.state == STATE_BORDER) and 160 or (self.isSlow and 48 or 95)
+
+        if hasMove then
+            self.idleTimer = 0
+            self.fuseWarning = false
+            if self.fuseActive then
+                self.fuseActive = false
+                Audio.stopFuse()
+            end
+
+            self.moveAccumulator = self.moveAccumulator + speed * dt
+            while self.moveAccumulator >= 1.0 do
+                self.moveAccumulator = self.moveAccumulator - 1.0
+                local result = self:step(input.dx, input.dy, wantsDraw, input.slowDraw, qixList)
+
+                -- Plasma cutting spark emitter
+                if self.state == STATE_DRAWING and offsetX and scaleX then
+                    Particles.spawnCutSpark(offsetX + self.x * scaleX, offsetY + self.y * scaleY, input.dx, input.dy, self.isSlow)
+                end
+
+                if result and result.captured then
+                    onAreaCaptured(result.captureResult)
+                    return
+                end
+                if result and result.died then
+                    onDeath(result.reason)
+                    return
+                end
+            end
+        else
+            self.moveAccumulator = 0
+            -- Fuse ignition on idle while drawing
+            if self.state == STATE_DRAWING then
+                self.idleTimer = self.idleTimer + dt
+                if self.idleTimer >= self.fuseWarningDelay and self.idleTimer < self.fuseDelay then
+                    self.fuseWarning = true
+                elseif self.idleTimer >= self.fuseDelay then
+                    self.fuseWarning = false
+                    if not self.fuseActive then
+                        self.fuseActive = true
+                        self.fuseIndex = 1
+                        Audio.startFuse()
+                    end
+
+                    self.fuseIndex = self.fuseIndex + self.fuseBurnSpeed * dt
+                    if self.fuseIndex >= #self.stixPath then
+                        Audio.stopAll()
+                        onDeath("fuse")
+                        return
+                    end
+                end
+            end
+        end
+        return
     end
 
-    if hasMove then
-        self.idleTimer = 0
-        self.fuseWarning = false
-        if self.fuseActive then
-            self.fuseActive = false
-            Audio.stopFuse()
-        end
+    -- =========================================================================
+    -- Perimeter Navigation (STATE_BORDER, wantsDraw == false)
+    -- Implements Corner Snapping & Pre-Turn Assist with 120ms Input Buffering
+    -- =========================================================================
+    local speed = 160 -- Border traversal pacing
+    local snapTolerance = self:getSnapTolerance(speed, dt)
 
+    -- 1. Update 120ms input buffer timer
+    if self.turnBufferTimer > 0 then
+        self.turnBufferTimer = self.turnBufferTimer - dt
+        if self.turnBufferTimer <= 0 then
+            self:clearTurnBuffer()
+        end
+    end
+
+    local inDx = input.dx
+    local inDy = input.dy
+
+    -- 2. Check for 180-degree instant reversal along the active line
+    local isReversal = false
+    if self.lastMoveDirX ~= 0 and inDx == -self.lastMoveDirX and inDy == 0 then
+        isReversal = true
+    elseif self.lastMoveDirY ~= 0 and inDy == -self.lastMoveDirY and inDx == 0 then
+        isReversal = true
+    end
+
+    if isReversal then
+        self:clearTurnBuffer()
+        self.idleTimer = 0
         self.moveAccumulator = self.moveAccumulator + speed * dt
         while self.moveAccumulator >= 1.0 do
             self.moveAccumulator = self.moveAccumulator - 1.0
-            local result = self:step(input.dx, input.dy, wantsDraw, input.slowDraw, qixList)
+            self:step(inDx, inDy, false, false, qixList)
+        end
+        return
+    end
 
-            -- Plasma cutting spark emitter
-            if self.state == STATE_DRAWING and offsetX and scaleX then
-                Particles.spawnCutSpark(offsetX + self.x * scaleX, offsetY + self.y * scaleY, input.dx, input.dy, self.isSlow)
+    -- 3. Detect perpendicular turn input and update buffer
+    if self.lastMoveDirX ~= 0 then
+        -- Currently traveling horizontally
+        if inDy ~= 0 then
+            self.turnBufferDx = 0
+            self.turnBufferDy = inDy
+            self.turnBufferTimer = self.turnBufferDuration
+        end
+    elseif self.lastMoveDirY ~= 0 then
+        -- Currently traveling vertically
+        if inDx ~= 0 then
+            self.turnBufferDx = inDx
+            self.turnBufferDy = 0
+            self.turnBufferTimer = self.turnBufferDuration
+        end
+    else
+        -- Stationary on perimeter
+        if inDx ~= 0 and inDy == 0 then
+            if not (self.grid:inBounds(self.x + inDx, self.y) and self.grid:isBorder(self.x + inDx, self.y)) then
+                self.turnBufferDx = inDx
+                self.turnBufferDy = 0
+                self.turnBufferTimer = self.turnBufferDuration
+            end
+        elseif inDy ~= 0 and inDx == 0 then
+            if not (self.grid:inBounds(self.x, self.y + inDy) and self.grid:isBorder(self.x, self.y + inDy)) then
+                self.turnBufferDx = 0
+                self.turnBufferDy = inDy
+                self.turnBufferTimer = self.turnBufferDuration
+            end
+        elseif inDx ~= 0 and inDy ~= 0 then
+            if self.grid:inBounds(self.x + inDx, self.y) and self.grid:isBorder(self.x + inDx, self.y) then
+                self.lastMoveDirX = inDx
+                self.turnBufferDx = 0
+                self.turnBufferDy = inDy
+                self.turnBufferTimer = self.turnBufferDuration
+            elseif self.grid:inBounds(self.x, self.y + inDy) and self.grid:isBorder(self.x, self.y + inDy) then
+                self.lastMoveDirY = inDy
+                self.turnBufferDx = inDx
+                self.turnBufferDy = 0
+                self.turnBufferTimer = self.turnBufferDuration
+            end
+        end
+    end
+
+    -- 4. Attempt immediate corner snap turn if buffer is active
+    if self.turnBufferTimer > 0 then
+        if self:trySnapTurn(self.turnBufferDx, self.turnBufferDy, snapTolerance) then
+            self.idleTimer = 0
+            return
+        end
+    end
+
+    -- 5. Determine along-axis movement towards corner
+    local stepDx, stepDy = 0, 0
+    local maxAnticipateDist = math.floor(speed * self.turnBufferDuration + 0.5) -- ~19 units
+
+    if self.lastMoveDirX ~= 0 then
+        if inDx ~= 0 then
+            stepDx = inDx
+        elseif (inDy ~= 0 or (self.turnBufferTimer > 0 and self.turnBufferDy ~= 0)) then
+            local checkDy = (inDy ~= 0) and inDy or self.turnBufferDy
+            if self:hasCornerAhead(self.lastMoveDirX, 0, 0, checkDy, maxAnticipateDist) then
+                -- Pre-turning: continue moving along current axis towards the verified upcoming corner
+                stepDx = self.lastMoveDirX
+            end
+        end
+        stepDy = 0
+    elseif self.lastMoveDirY ~= 0 then
+        stepDx = 0
+        if inDy ~= 0 then
+            stepDy = inDy
+        elseif (inDx ~= 0 or (self.turnBufferTimer > 0 and self.turnBufferDx ~= 0)) then
+            local checkDx = (inDx ~= 0) and inDx or self.turnBufferDx
+            if self:hasCornerAhead(0, self.lastMoveDirY, checkDx, 0, maxAnticipateDist) then
+                stepDy = self.lastMoveDirY
+            end
+        end
+    else
+        stepDx = inDx
+        stepDy = (inDx == 0) and inDy or 0
+    end
+
+    -- Advance along valid border line
+    if stepDx ~= 0 or stepDy ~= 0 then
+        self.idleTimer = 0
+        self.moveAccumulator = self.moveAccumulator + speed * dt
+        while self.moveAccumulator >= 1.0 do
+            self.moveAccumulator = self.moveAccumulator - 1.0
+            local oldX, oldY = self.x, self.y
+            self:step(stepDx, stepDy, false, false, qixList)
+
+            if self.x == oldX and self.y == oldY then
+                self.moveAccumulator = 0
+                break
             end
 
-            if result and result.captured then
-                onAreaCaptured(result.captureResult)
-                return
-            end
-            if result and result.died then
-                onDeath(result.reason)
-                return
+            -- Re-check if buffered turn can execute after this sub-step
+            if self.turnBufferTimer > 0 then
+                if self:trySnapTurn(self.turnBufferDx, self.turnBufferDy, snapTolerance) then
+                    break
+                end
             end
         end
     else
         self.moveAccumulator = 0
-        -- Fuse ignition on idle while drawing
-        if self.state == STATE_DRAWING then
-            self.idleTimer = self.idleTimer + dt
-            if self.idleTimer >= self.fuseWarningDelay and self.idleTimer < self.fuseDelay then
-                self.fuseWarning = true
-            elseif self.idleTimer >= self.fuseDelay then
-                self.fuseWarning = false
-                if not self.fuseActive then
-                    self.fuseActive = true
-                    self.fuseIndex = 1
-                    Audio.startFuse()
-                end
-
-                self.fuseIndex = self.fuseIndex + self.fuseBurnSpeed * dt
-                if self.fuseIndex >= #self.stixPath then
-                    Audio.stopAll()
-                    onDeath("fuse")
-                    return
-                end
-            end
-        end
     end
 end
 
@@ -187,6 +475,8 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
         if nextCell == self.grid.CELL_BORDER then
             self.x = nx
             self.y = ny
+            self.lastMoveDirX = dx
+            self.lastMoveDirY = dy
             Audio.play("tick")
             return nil
         end

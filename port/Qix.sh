@@ -72,5 +72,11 @@ pm_platform_helper "$LOVE_BIN"
 
 echo "Launching Qix..."
 $LOVE_BIN "$GAMEDIR/qix.love"
+QIX_EXIT_CODE=$?
+echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
+if [ $QIX_EXIT_CODE -ne 0 ]; then
+  echo "WARNING: Game exited with status $QIX_EXIT_CODE! Kernel diagnostics:"
+  dmesg | tail -n 25 | grep -i "oom\|kill\|segfault\|out of memory\|mali" || true
+fi
 
 pm_finish

@@ -41,6 +41,92 @@ function Grid.new(width, height)
     return self
 end
 
+local Logger = require("logger")
+
+local function loadSafeImage(path, isExternal, maxW, maxH)
+    maxW = maxW or 640
+    maxH = maxH or 480
+    local rawData = nil
+    local fileData = nil
+
+    if isExternal then
+        local f = io.open(path, "rb")
+        if f then
+            local data = f:read("*all")
+            f:close()
+            local filename = path:match("([^/\\]+)$") or "art.jpg"
+            local okData, fd = pcall(love.filesystem.newFileData, data, filename)
+            if okData and fd then
+                fileData = fd
+                local okImg, id = pcall(love.image.newImageData, fd)
+                if okImg and id then
+                    rawData = id
+                end
+            end
+        end
+    end
+
+    if not rawData and love.filesystem.getInfo(path) then
+        local okImg, id = pcall(love.image.newImageData, path)
+        if okImg and id then
+            rawData = id
+        end
+    end
+
+    if fileData and fileData.release then
+        pcall(function() fileData:release() end)
+    end
+
+    if not rawData then
+        return nil
+    end
+
+    local srcW = rawData:getWidth()
+    local srcH = rawData:getHeight()
+
+    -- If image fits within limits, create image directly
+    if srcW <= maxW and srcH <= maxH then
+        local ok, img = pcall(love.graphics.newImage, rawData)
+        if rawData.release then pcall(function() rawData:release() end) end
+        if ok and img then
+            return img, srcW, srcH, srcW, srcH
+        end
+        return nil
+    end
+
+    -- Downscale to fit within maxW x maxH preserving aspect ratio
+    local scale = math.min(maxW / srcW, maxH / srcH)
+    local dstW = math.max(1, math.floor(srcW * scale))
+    local dstH = math.max(1, math.floor(srcH * scale))
+
+    local okData, compactData = pcall(love.image.newImageData, dstW, dstH)
+    if not okData or not compactData then
+        if rawData.release then pcall(function() rawData:release() end) end
+        return nil
+    end
+
+    for dy = 0, dstH - 1 do
+        local sy = math.floor(dy / scale)
+        if sy >= srcH then sy = srcH - 1 end
+        for dx = 0, dstW - 1 do
+            local sx = math.floor(dx / scale)
+            if sx >= srcW then sx = srcW - 1 end
+            local r, g, b, a = rawData:getPixel(sx, sy)
+            compactData:setPixel(dx, dy, r, g, b, a)
+        end
+    end
+
+    if rawData.release then pcall(function() rawData:release() end) end
+
+    local ok, img = pcall(love.graphics.newImage, compactData)
+    if compactData.release then pcall(function() compactData:release() end) end
+
+    if ok and img then
+        return img, srcW, srcH, dstW, dstH
+    end
+    return nil
+end
+
 function Grid:loadBackground(artEntry)
     if self.bgImage and self.bgImage.release then
         pcall(function() self.bgImage:release() end)
@@ -56,38 +142,18 @@ function Grid:loadBackground(artEntry)
     local isExternal = (type(artEntry) == "table" and artEntry.isExternal) or
                        (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
 
-    local img = nil
-
-    -- 1. If external file (SD card path), load via standard io and FileData
-    if isExternal then
-        local f = io.open(path, "rb")
-        if f then
-            local data = f:read("*all")
-            f:close()
-            local filename = path:match("([^/\\]+)$") or "art.jpg"
-            local okData, fileData = pcall(love.filesystem.newFileData, data, filename)
-            if okData and fileData then
-                local success, loadedImg = pcall(love.graphics.newImage, fileData)
-                if success and loadedImg then
-                    img = loadedImg
-                end
-            end
-        end
-    end
-
-    -- 2. If not external or external load failed, load via love.filesystem
-    if not img and love.filesystem.getInfo(path) then
-        local success, loadedImg = pcall(love.graphics.newImage, path)
-        if success and loadedImg then
-            img = loadedImg
-        end
-    end
+    local img, srcW, srcH, dstW, dstH = loadSafeImage(path, isExternal, 640, 480)
 
     if img then
         self.bgImage = img
         self.bgImage:setFilter("linear", "linear")
         self:updateAllPixels()
+        collectgarbage("collect")
+        local name = type(artEntry) == "table" and artEntry.name or tostring(path)
+        Logger.info("GRID", "Loaded background: %s (Original: %dx%d -> GPU: %dx%d)", name, srcW or 0, srcH or 0, dstW or 0, dstH or 0)
         return true
+    else
+        Logger.warn("GRID", "Failed to load background image: %s", tostring(path))
     end
 
     self:updateAllPixels()
@@ -97,6 +163,9 @@ end
 function Grid:loadForeground(fgEntry)
     if self.fgImage and self.fgImage.release then
         pcall(function() self.fgImage:release() end)
+    end
+    if self.fgGridData and self.fgGridData.release then
+        pcall(function() self.fgGridData:release() end)
     end
     self.fgImage = nil
     self.fgGridData = nil
@@ -111,17 +180,18 @@ function Grid:loadForeground(fgEntry)
                        (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
 
     local imgData = nil
+    local fileData = nil
 
-    -- 1. If external file (SD card path), load via standard io and FileData
     if isExternal then
         local f = io.open(path, "rb")
         if f then
             local data = f:read("*all")
             f:close()
             local filename = path:match("([^/\\]+)$") or "fg.jpg"
-            local okData, fileData = pcall(love.filesystem.newFileData, data, filename)
-            if okData and fileData then
-                local okImg, loadedData = pcall(love.image.newImageData, fileData)
+            local okData, fd = pcall(love.filesystem.newFileData, data, filename)
+            if okData and fd then
+                fileData = fd
+                local okImg, loadedData = pcall(love.image.newImageData, fd)
                 if okImg and loadedData then
                     imgData = loadedData
                 end
@@ -129,7 +199,6 @@ function Grid:loadForeground(fgEntry)
         end
     end
 
-    -- 2. If not external or external load failed, load via love.filesystem
     if not imgData and love.filesystem.getInfo(path) then
         local okImg, loadedData = pcall(love.image.newImageData, path)
         if okImg and loadedData then
@@ -137,8 +206,11 @@ function Grid:loadForeground(fgEntry)
         end
     end
 
+    if fileData and fileData.release then
+        pcall(function() fileData:release() end)
+    end
+
     if imgData then
-        -- Map source image into a 355x251 grid buffer using proportional cover
         local srcW = imgData:getWidth()
         local srcH = imgData:getHeight()
         local targetW = self.width
@@ -162,7 +234,14 @@ function Grid:loadForeground(fgEntry)
             end
         end
 
+        if imgData.release then
+            pcall(function() imgData:release() end)
+        end
+
         self:updateAllPixels()
+        collectgarbage("collect")
+        local name = type(fgEntry) == "table" and fgEntry.name or tostring(path)
+        Logger.info("GRID", "Loaded foreground skin: %s (Source: %dx%d -> Grid: %dx%d)", name, srcW, srcH, targetW, targetH)
         return true
     end
 
