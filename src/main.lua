@@ -185,7 +185,8 @@ function love.load()
 
     game.grid = Grid.new(355, 251)
     game.player = Player.new(game.grid)
-    game.titleAttractQix = Qix.new(game.grid, 177, 125, 0.75)
+    game.titleGrid = Grid.new(355, 251)
+    game.titleAttractQix = Qix.new(game.titleGrid, 177, 125, 0.75)
 
     -- Initialize Achievements
     Achievements.init()
@@ -437,6 +438,21 @@ function game:saveHighScore()
     end
 end
 
+function game:setState(newState, triggerReason)
+    local oldState = self.state
+    if oldState == newState then return end
+    Logger.info("STATE", "Transition: %s -> %s (trigger: %s)", tostring(oldState), tostring(newState), tostring(triggerReason or "unspecified"))
+    self.state = newState
+
+    if newState == "TITLE" then
+        self.titleCooldown = 0.40 -- Prevent accidental double-tap button bleed from GAME_OVER or PAUSE
+        self.titleBlink = 0
+        if self.titleGrid then
+            self.titleGrid:init()
+        end
+    end
+end
+
 function game:cycleDifficulty(dir)
     local curIdx = 2
     for i, d in ipairs(DIFFICULTY_ORDER) do
@@ -551,7 +567,7 @@ function game:startLevel(levelNum)
         Sparx.new(self.grid, self.grid.width - 1, 0, false, false, cfg.speedMult)
     }
 
-    self.state = "PLAYING"
+    self:setState("PLAYING", "level_start")
 end
 
 function game:onAreaCaptured(captureResult)
@@ -653,7 +669,7 @@ function game:onAreaCaptured(captureResult)
             Achievements.unlock("first_contact")
         end
 
-        self.state = "LEVEL_CLEAR"
+        self:setState("LEVEL_CLEAR", "split_qix")
         self.clearPhase = "SCORES"
         self.clearTimer = 2.5
         self.clearPercent = captureResult.percent
@@ -681,7 +697,7 @@ function game:onAreaCaptured(captureResult)
             Achievements.unlock("first_contact")
         end
 
-        self.state = "LEVEL_CLEAR"
+        self:setState("LEVEL_CLEAR", "quota_reached")
         self.clearPhase = "SCORES"
         self.clearTimer = 2.5 -- Show score card briefly, then transition to pure artwork showcase
         self.clearPercent = captureResult.percent
@@ -703,7 +719,7 @@ end
 function game:onPlayerDeath(reason, hitGridX, hitGridY)
     Audio.stopAll()
     Audio.play("death")
-    self.state = "DEAD"
+    self:setState("DEAD", reason or "player_death")
     self.player.state = Player.STATE_DEAD
     self.lives = self.lives - 1
     self.deathTimer = 1.0
@@ -747,6 +763,11 @@ function love.update(dt)
     -- Banner timer decay
     if game.bannerTimer > 0 then
         game.bannerTimer = game.bannerTimer - dt
+    end
+
+    -- Title input debounce cooldown decay
+    if game.titleCooldown and game.titleCooldown > 0 then
+        game.titleCooldown = math.max(0, game.titleCooldown - dt)
     end
 
     -- Update floating score popups
@@ -863,7 +884,7 @@ function love.update(dt)
                 }
                 game.bannerText = "⚡ SAFE SHIELD ACTIVE ⚡"
                 game.bannerTimer = 1.8
-                game.state = "PLAYING"
+                game:setState("PLAYING", "respawn")
             else
                 if game.score > (game.sessionInitialHighScore or 0) and game.score > 0 then
                     game.isNewRecord = true
@@ -872,7 +893,7 @@ function love.update(dt)
                     game.isNewRecord = false
                 end
                 game:saveHighScore()
-                game.state = "GAME_OVER"
+                game:setState("GAME_OVER", "lives_depleted")
                 game.gameOverAnim = {
                     timer = 0,
                     cardY = 480,
@@ -1059,7 +1080,7 @@ function game:executePauseOption()
     if not item then return end
 
     if item.id == "RESUME" then
-        self.state = "PLAYING"
+        self:setState("PLAYING", "pause_resume")
         Audio.play("tick")
     elseif item.id == "DIFFICULTY" then
         self:cycleDifficulty(1)
@@ -1092,7 +1113,7 @@ function game:executePauseOption()
         self:startNewGame()
     elseif item.id == "QUIT" then
         Audio.play("tick")
-        self.state = "TITLE"
+        self:setState("TITLE", "pause_quit_to_title")
     end
 end
 
@@ -1103,12 +1124,13 @@ function game:executeTitleOption()
         self:startNewGame()
     elseif opt == "HOW TO" then
         Audio.play("tick")
-        self.state = "HOW_TO"
+        self:setState("HOW_TO", "title_menu_howto")
     elseif opt == "BADGES" then
         Audio.play("tick")
         self.badgesScrollIndex = 1
-        self.state = "BADGES"
+        self:setState("BADGES", "title_menu_badges")
     elseif opt == "QUIT" then
+        Logger.info("SYSTEM", "User selected QUIT option from Title menu.")
         love.event.quit()
     end
 end
@@ -1117,7 +1139,7 @@ function love.gamepadpressed(joystick, button)
     -- Global Start Button: Opens Pause menu when PLAYING (never closes menu on Start)
     if button == "start" then
         if game.state == "PLAYING" then
-            game.state = "PAUSED"
+            game:setState("PAUSED", "gamepad_start_pause")
             game.pauseIndex = 1
             game.pauseOpenedAt = love.timer.getTime()
             Audio.stopAll()
@@ -1145,10 +1167,13 @@ function love.gamepadpressed(joystick, button)
         elseif button == "a" then
             game:executePauseOption()
         elseif button == "b" or button == "back" then
-            game.state = "PLAYING"
+            game:setState("PLAYING", "gamepad_pause_back")
             Audio.play("tick")
         end
     elseif game.state == "TITLE" then
+        if (game.titleCooldown or 0) > 0 then
+            return
+        end
         if button == "dpup" then
             game:navMenu("up")
         elseif button == "dpdown" then
@@ -1166,7 +1191,7 @@ function love.gamepadpressed(joystick, button)
         elseif button == "dpdown" then
             game:navMenu("down")
         elseif button == "a" or button == "b" or button == "start" or button == "back" then
-            game.state = "TITLE"
+            game:setState("TITLE", "gamepad_badges_back")
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
@@ -1185,7 +1210,7 @@ function love.gamepadpressed(joystick, button)
             game.howToScrollY = 0
             Audio.play("tick")
         elseif button == "a" or button == "b" or button == "start" or button == "back" then
-            game.state = "TITLE"
+            game:setState("TITLE", "gamepad_howto_back")
             Audio.play("tick")
         end
     elseif game.state == "GAME_OVER" then
@@ -1201,14 +1226,14 @@ function love.gamepadpressed(joystick, button)
         elseif button == "a" or button == "start" then
             if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
                 Audio.play("tick")
-                game.state = "TITLE"
+                game:setState("TITLE", "gamepad_gameover_quit")
             else
                 Audio.play("start")
                 game:startNewGame()
             end
         elseif button == "b" or button == "back" then
             Audio.play("tick")
-            game.state = "TITLE"
+            game:setState("TITLE", "gamepad_gameover_back")
         end
     elseif game.state == "LEVEL_CLEAR" then
         if button == "a" or button == "start" then
@@ -1228,7 +1253,7 @@ function love.mousepressed(x, y, button)
         end
         if y >= 320 and y <= 390 and x >= 290 and x <= 530 then
             Audio.play("tick")
-            game.state = "TITLE"
+            game:setState("TITLE", "mouse_gameover_quit")
         else
             Audio.play("start")
             game:startNewGame()
@@ -1240,6 +1265,9 @@ function love.mousepressed(x, y, button)
             game:startLevel(game.level + 1)
         end
     elseif game.state == "TITLE" then
+        if (game.titleCooldown or 0) > 0 then
+            return
+        end
         local startY = 195
         local btnW = 260
         local btnHeight = 36
@@ -1254,7 +1282,7 @@ function love.mousepressed(x, y, button)
             end
         end
     elseif game.state == "HOW_TO" or game.state == "BADGES" then
-        game.state = "TITLE"
+        game:setState("TITLE", "mouse_screen_back")
         Audio.play("tick")
     end
 end
@@ -1263,7 +1291,7 @@ function love.keypressed(key)
     -- Global pause: Open pause on Escape or P when PLAYING (never closes on P/Start)
     if key == "escape" or key == "p" then
         if game.state == "PLAYING" then
-            game.state = "PAUSED"
+            game:setState("PAUSED", "keyboard_pause")
             game.pauseIndex = 1
             game.pauseOpenedAt = love.timer.getTime()
             Audio.stopAll()
@@ -1280,6 +1308,9 @@ function love.keypressed(key)
             end
         end
     elseif game.state == "TITLE" then
+        if (game.titleCooldown or 0) > 0 then
+            return
+        end
         if key == "up" or key == "w" then
             game:navMenu("up")
         elseif key == "down" or key == "s" then
@@ -1291,7 +1322,14 @@ function love.keypressed(key)
         elseif key == "return" or key == "space" or key == "z" or key == "j" then
             game:executeTitleOption()
         elseif key == "escape" then
-            love.event.quit()
+            if game.titleIndex == #game.titleItems then
+                Logger.info("SYSTEM", "User confirmed QUIT from Title menu via Escape.")
+                love.event.quit()
+            else
+                -- Focus QUIT button first rather than immediate hard exit
+                game.titleIndex = #game.titleItems
+                Audio.play("tick")
+            end
         end
     elseif game.state == "BADGES" then
         if key == "up" or key == "w" then
@@ -1299,7 +1337,7 @@ function love.keypressed(key)
         elseif key == "down" or key == "s" then
             game:navMenu("down")
         elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
-            game.state = "TITLE"
+            game:setState("TITLE", "keyboard_badges_back")
             Audio.play("tick")
         end
     elseif game.state == "HOW_TO" then
@@ -1318,7 +1356,7 @@ function love.keypressed(key)
             game.howToScrollY = 0
             Audio.play("tick")
         elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
-            game.state = "TITLE"
+            game:setState("TITLE", "keyboard_howto_back")
             Audio.play("tick")
         end
     elseif game.state == "GAME_OVER" then
@@ -1334,14 +1372,14 @@ function love.keypressed(key)
         elseif key == "return" or key == "space" or key == "z" or key == "j" then
             if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
                 Audio.play("tick")
-                game.state = "TITLE"
+                game:setState("TITLE", "keyboard_gameover_quit")
             else
                 Audio.play("start")
                 game:startNewGame()
             end
         elseif key == "escape" or key == "b" or key == "x" then
             Audio.play("tick")
-            game.state = "TITLE"
+            game:setState("TITLE", "keyboard_gameover_back")
         end
     elseif game.state == "PAUSED" then
         local now = love.timer.getTime()
@@ -1359,7 +1397,7 @@ function love.keypressed(key)
         elseif key == "return" or key == "space" or key == "z" then
             game:executePauseOption()
         elseif key == "b" or key == "escape" or key == "backspace" then
-            game.state = "PLAYING"
+            game:setState("PLAYING", "keyboard_pause_resume")
             Audio.play("tick")
         end
     elseif key == "m" then
@@ -2529,6 +2567,25 @@ function game:drawGameOver()
     love.graphics.setFont(game.font)
     love.graphics.setColor(0.55, 0.68, 0.85, 0.95)
     love.graphics.printf("◄/►: CHOOSE   •   (A)/START: CONFIRM   •   (B): MENU", 0, cardY + 386, 640, "center")
+end
+
+function love.quit()
+    Logger.info("SYSTEM", "Clean game shutdown initiated. Draining audio & GPU command buffers...")
+    if Audio and Audio.stopAll then
+        pcall(Audio.stopAll)
+    end
+    if love.audio and love.audio.stop then
+        pcall(love.audio.stop)
+    end
+    if love.graphics and love.graphics.clear then
+        pcall(function()
+            love.graphics.clear(0, 0, 0, 1)
+            love.graphics.present()
+        end)
+    end
+    love.timer.sleep(0.05)
+    Logger.info("SYSTEM", "Shutdown cleanup complete. Process exiting safely.")
+    return false
 end
 
 return game

@@ -181,8 +181,9 @@ function AmbientShips.update(dt)
                     s.trail[p].alpha = s.trail[p - 1].alpha
                 end
                 -- Nozzle offset behind center along velocity direction
-                local normVx = s.vx / s.speed
-                local normVy = s.vy / s.speed
+                local spd = math.max(1, s.speed or 1)
+                local normVx = s.vx / spd
+                local normVy = s.vy / spd
                 local nX = s.x - normVx * 12
                 local nY = s.y - normVy * 12
 
@@ -240,8 +241,9 @@ function AmbientShips.draw()
             end
 
             -- 3. Engine Thruster Nozzle Flare
-            local normVx = s.vx / s.speed
-            local normVy = s.vy / s.speed
+            local spd = math.max(1, s.speed or 1)
+            local normVx = s.vx / spd
+            local normVy = s.vy / spd
             local nX = s.x - normVx * 12
             local nY = s.y - normVy * 12
             local pulse = 0.8 + 0.2 * math.sin(s.animTimer)

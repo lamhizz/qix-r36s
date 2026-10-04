@@ -111,16 +111,33 @@ function Qix:update(dt)
         self.v2.y = -self.v2.y + (love.math.random() - 0.5) * 0.4
     end
 
-    -- Clamp speeds (tactical zoomed-out pacing)
+    -- Clamp speeds safely (strict protection against divide-by-zero / NaN generation)
     local maxSpd = 1.85 * self.speedMultiplier
     local minSpd = 0.65 * self.speedMultiplier
     local cur1 = math.sqrt(self.v1.x^2 + self.v1.y^2)
     local cur2 = math.sqrt(self.v2.x^2 + self.v2.y^2)
 
-    if cur1 > maxSpd then self.v1.x = (self.v1.x/cur1)*maxSpd; self.v1.y = (self.v1.y/cur1)*maxSpd end
-    if cur1 < minSpd then self.v1.x = (self.v1.x/cur1)*minSpd; self.v1.y = (self.v1.y/cur1)*minSpd end
-    if cur2 > maxSpd then self.v2.x = (self.v2.x/cur2)*maxSpd; self.v2.y = (self.v2.y/cur2)*maxSpd end
-    if cur2 < minSpd then self.v2.x = (self.v2.x/cur2)*minSpd; self.v2.y = (self.v2.y/cur2)*minSpd end
+    if cur1 < 0.0001 then
+        self.v1.x = minSpd
+        self.v1.y = 0
+    elseif cur1 > maxSpd then
+        self.v1.x = (self.v1.x / cur1) * maxSpd
+        self.v1.y = (self.v1.y / cur1) * maxSpd
+    elseif cur1 < minSpd then
+        self.v1.x = (self.v1.x / cur1) * minSpd
+        self.v1.y = (self.v1.y / cur1) * minSpd
+    end
+
+    if cur2 < 0.0001 then
+        self.v2.x = 0
+        self.v2.y = minSpd
+    elseif cur2 > maxSpd then
+        self.v2.x = (self.v2.x / cur2) * maxSpd
+        self.v2.y = (self.v2.y / cur2) * maxSpd
+    elseif cur2 < minSpd then
+        self.v2.x = (self.v2.x / cur2) * minSpd
+        self.v2.y = (self.v2.y / cur2) * minSpd
+    end
 
     if not self:isBlocked(self.p1.x + self.v1.x * step, self.p1.y + self.v1.y * step) then
         self.p1.x = self.p1.x + self.v1.x * step
@@ -131,25 +148,28 @@ function Qix:update(dt)
         self.p2.y = self.p2.y + self.v2.y * step
     end
 
-    -- Distance tether
+    -- Distance tether with strict divide-by-zero protection
     local dx = self.p2.x - self.p1.x
     local dy = self.p2.y - self.p1.y
     local dist = math.sqrt(dx^2 + dy^2)
 
-    if dist > self.maxLen then
+    if dist > self.maxLen and dist > 0.0001 then
         local diff = (dist - self.maxLen) * 0.5
         local nx, ny = dx / dist, dy / dist
         self.p1.x = self.p1.x + nx * diff
         self.p1.y = self.p1.y + ny * diff
         self.p2.x = self.p2.x - nx * diff
         self.p2.y = self.p2.y - ny * diff
-    elseif dist < self.minLen and dist > 0.001 then
+    elseif dist < self.minLen and dist > 0.0001 then
         local diff = (self.minLen - dist) * 0.5
         local nx, ny = dx / dist, dy / dist
         self.p1.x = self.p1.x - nx * diff
         self.p1.y = self.p1.y - ny * diff
         self.p2.x = self.p2.x + nx * diff
         self.p2.y = self.p2.y + ny * diff
+    elseif dist <= 0.0001 then
+        self.p2.x = self.p1.x + self.minLen
+        self.p2.y = self.p1.y
     end
 
     -- Update ribbon trail (recycle segments once full, zero allocations)

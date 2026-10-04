@@ -66,17 +66,35 @@ mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
+# Clean up any stale gptokeyb instances from previous runs
+$ESUDO killall -9 gptokeyb gptokeyb2 2>/dev/null || true
+
 # Start controller mapper
 $GPTOKEYB "love" -c "$GAMEDIR/qix.gptk" &
-pm_platform_helper "$LOVE_BIN"
+
+# Platform helper (guarded for older PortMaster installs)
+if [[ -n "$(type -t pm_platform_helper)" ]]; then
+  pm_platform_helper "$LOVE_BIN"
+fi
 
 echo "Launching Qix..."
 $LOVE_BIN "$GAMEDIR/qix.love"
 QIX_EXIT_CODE=$?
 echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
+
 if [ $QIX_EXIT_CODE -ne 0 ]; then
   echo "WARNING: Game exited with status $QIX_EXIT_CODE! Kernel diagnostics:"
-  dmesg | tail -n 25 | grep -i "oom\|kill\|segfault\|out of memory\|mali" || true
+  if [ -n "$ESUDO" ]; then
+    $ESUDO dmesg | tail -n 40 | grep -E -i "love|segfault|oom|kill|mali|error|fault" || true
+  else
+    dmesg | tail -n 40 | grep -E -i "love|segfault|oom|kill|mali|error|fault" || true
+  fi
 fi
 
-pm_finish
+# Cleanup with fallback if pm_finish is not available
+if [[ -n "$(type -t pm_finish)" ]]; then
+  pm_finish
+else
+  $ESUDO killall -9 gptokeyb gptokeyb2 2>/dev/null || true
+  $ESUDO systemctl restart oga_events & 2>/dev/null || true
+fi
