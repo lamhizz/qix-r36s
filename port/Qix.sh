@@ -66,6 +66,23 @@ mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 
+# Configure OpenAL-Soft for rock-solid ALSA playback on RK3326
+# (Forces ALSA backend, disables buggy ALSA mmap, and increases buffer periods to stop broken pipe underruns)
+export ALSOFT_DRIVERS="alsa"
+cat << 'EOF' > "$GAMEDIR/alsoft.conf"
+drivers = alsa
+[alsa]
+mmap = false
+device = default
+periods = 4
+period_size = 1024
+EOF
+export ALSOFT_CONF="$GAMEDIR/alsoft.conf"
+
+# Enable kernel exception tracing and core dumps for crash post-mortem
+$ESUDO sysctl -w debug.exception-trace=1 2>/dev/null || true
+ulimit -c unlimited 2>/dev/null || true
+
 # Clean up any stale gptokeyb instances from previous runs
 $ESUDO killall -9 gptokeyb gptokeyb2 2>/dev/null || true
 
@@ -85,9 +102,9 @@ echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
 if [ $QIX_EXIT_CODE -ne 0 ]; then
   echo "WARNING: Game exited with status $QIX_EXIT_CODE! Kernel diagnostics:"
   if [ -n "$ESUDO" ]; then
-    $ESUDO dmesg | tail -n 40 | grep -E -i "love|segfault|oom|kill|mali|error|fault" || true
+    $ESUDO dmesg -T | tail -n 50 || true
   else
-    dmesg | tail -n 40 | grep -E -i "love|segfault|oom|kill|mali|error|fault" || true
+    dmesg -T | tail -n 50 || true
   fi
 fi
 

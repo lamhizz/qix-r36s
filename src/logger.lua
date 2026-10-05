@@ -42,6 +42,41 @@ function Logger.init()
         local limits = love.graphics.getSystemLimits()
         Logger.info("GRAPHICS", "Max Texture Size: %d | MultiCanvas: %s", limits.texturesize or 0, tostring(limits.multicanvas))
     end
+
+    Logger.installNativeSignalHandler()
+end
+
+function Logger.installNativeSignalHandler()
+    pcall(function()
+        local ok, ffi = pcall(require, "ffi")
+        if not ok or not ffi then return end
+
+        ffi.cdef[[
+            typedef void (*sighandler_t)(int);
+            sighandler_t signal(int signum, sighandler_t handler);
+            int backtrace(void **buffer, int size);
+            void backtrace_symbols_fd(void *const *buffer, int size, int fd);
+            int write(int fd, const void *buf, size_t count);
+            void _exit(int status);
+        ]]
+
+        local onSignal = ffi.cast("sighandler_t", function(sig)
+            local msg = string.format("\n==================================================\n[FATAL NATIVE SIGNAL %d (SIGSEGV/CRASH)]\nEngine crashed at native C/C++ driver level!\n--- C Stack Backtrace ---\n", tonumber(sig))
+            ffi.C.write(1, msg, #msg)
+            local buf = ffi.new("void*[64]")
+            local frames = ffi.C.backtrace(buf, 64)
+            ffi.C.backtrace_symbols_fd(buf, frames, 1)
+            local endMsg = "==================================================\n"
+            ffi.C.write(1, endMsg, #endMsg)
+            ffi.C._exit(128 + tonumber(sig))
+        end)
+
+        ffi.C.signal(11, onSignal) -- SIGSEGV
+        ffi.C.signal(4, onSignal)  -- SIGILL
+        ffi.C.signal(7, onSignal)  -- SIGBUS
+        ffi.C.signal(8, onSignal)  -- SIGFPE
+        Logger.info("SYSTEM", "Native crash signal handler installed (SIGSEGV, SIGBUS, SIGFPE, SIGILL).")
+    end)
 end
 
 function Logger.formatLog(level, tag, msg, ...)

@@ -57,7 +57,6 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
             local filename = path:match("([^/\\]+)$") or "art.jpg"
             local okData, fd = pcall(love.filesystem.newFileData, data, filename)
             if okData and fd then
-                fileData = fd
                 local okImg, id = pcall(love.image.newImageData, fd)
                 if okImg and id then
                     rawData = id
@@ -73,10 +72,6 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
         end
     end
 
-    if fileData and fileData.release then
-        pcall(function() fileData:release() end)
-    end
-
     if not rawData then
         return nil
     end
@@ -87,7 +82,6 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
     -- If image fits within limits, create image directly
     if srcW <= maxW and srcH <= maxH then
         local ok, img = pcall(love.graphics.newImage, rawData)
-        if rawData.release then pcall(function() rawData:release() end) end
         if ok and img then
             return img, srcW, srcH, srcW, srcH
         end
@@ -101,7 +95,6 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
 
     local okData, compactData = pcall(love.image.newImageData, dstW, dstH)
     if not okData or not compactData then
-        if rawData.release then pcall(function() rawData:release() end) end
         return nil
     end
 
@@ -116,11 +109,7 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
         end
     end
 
-    if rawData.release then pcall(function() rawData:release() end) end
-
     local ok, img = pcall(love.graphics.newImage, compactData)
-    if compactData.release then pcall(function() compactData:release() end) end
-
     if ok and img then
         return img, srcW, srcH, dstW, dstH
     end
@@ -128,9 +117,6 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
 end
 
 function Grid:loadBackground(artEntry)
-    if self.bgImage and self.bgImage.release then
-        pcall(function() self.bgImage:release() end)
-    end
     self.bgImage = nil
 
     if not artEntry then
@@ -148,7 +134,6 @@ function Grid:loadBackground(artEntry)
         self.bgImage = img
         self.bgImage:setFilter("linear", "linear")
         self:updateAllPixels()
-        collectgarbage("collect")
         local name = type(artEntry) == "table" and artEntry.name or tostring(path)
         Logger.info("GRID", "Loaded background: %s (Original: %dx%d -> GPU: %dx%d)", name, srcW or 0, srcH or 0, dstW or 0, dstH or 0)
         return true
@@ -161,12 +146,6 @@ function Grid:loadBackground(artEntry)
 end
 
 function Grid:loadForeground(fgEntry)
-    if self.fgImage and self.fgImage.release then
-        pcall(function() self.fgImage:release() end)
-    end
-    if self.fgGridData and self.fgGridData.release then
-        pcall(function() self.fgGridData:release() end)
-    end
     self.fgImage = nil
     self.fgGridData = nil
 
@@ -180,7 +159,6 @@ function Grid:loadForeground(fgEntry)
                        (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
 
     local imgData = nil
-    local fileData = nil
 
     if isExternal then
         local f = io.open(path, "rb")
@@ -190,7 +168,6 @@ function Grid:loadForeground(fgEntry)
             local filename = path:match("([^/\\]+)$") or "fg.jpg"
             local okData, fd = pcall(love.filesystem.newFileData, data, filename)
             if okData and fd then
-                fileData = fd
                 local okImg, loadedData = pcall(love.image.newImageData, fd)
                 if okImg and loadedData then
                     imgData = loadedData
@@ -204,10 +181,6 @@ function Grid:loadForeground(fgEntry)
         if okImg and loadedData then
             imgData = loadedData
         end
-    end
-
-    if fileData and fileData.release then
-        pcall(function() fileData:release() end)
     end
 
     if imgData then
@@ -234,12 +207,7 @@ function Grid:loadForeground(fgEntry)
             end
         end
 
-        if imgData.release then
-            pcall(function() imgData:release() end)
-        end
-
         self:updateAllPixels()
-        collectgarbage("collect")
         local name = type(fgEntry) == "table" and fgEntry.name or tostring(path)
         Logger.info("GRID", "Loaded foreground skin: %s (Source: %dx%d -> Grid: %dx%d)", name, srcW, srcH, targetW, targetH)
         return true
@@ -674,7 +642,7 @@ function Grid:draw(offsetX, offsetY, scaleX, scaleY)
         local drawX = offsetX + (targetW - drawW) * 0.5
         local drawY = offsetY + (targetH - drawH) * 0.5
 
-        love.graphics.setScissor(offsetX, offsetY, targetW, targetH)
+        love.graphics.setScissor(math.floor(offsetX), math.floor(offsetY), math.floor(targetW), math.floor(targetH))
         love.graphics.draw(self.bgImage, drawX, drawY, 0, scale, scale)
         love.graphics.setScissor()
     end
