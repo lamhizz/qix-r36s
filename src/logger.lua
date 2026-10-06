@@ -11,72 +11,80 @@ Logger.saveLogPath = "qix_debug.log"
 Logger.lastHeartbeat = 0
 Logger.heartbeatInterval = 15 -- seconds
 Logger.startTime = 0
+Logger.history = {}
+Logger.MAX_HISTORY = 40
+
+Logger.breadcrumbs = {}
+Logger.MAX_BREADCRUMBS = 60
 
 local function getTimestamp()
     local t = os.time()
     return os.date("%Y-%m-%d %H:%M:%S", t)
 end
 
+function Logger.breadcrumb(tag, action, ...)
+    local desc = (select("#", ...) > 0) and string.format(action, ...) or tostring(action)
+    local uptime = love.timer and (love.timer.getTime() - Logger.startTime) or 0
+    local bc = string.format("[%07.2fs] [%s] %s", uptime, tag, desc)
+    table.insert(Logger.breadcrumbs, bc)
+    if #Logger.breadcrumbs > Logger.MAX_BREADCRUMBS then
+        table.remove(Logger.breadcrumbs, 1)
+    end
+end
+
+function Logger.dumpBreadcrumbs()
+    return table.concat(Logger.breadcrumbs, "\n")
+end
+
+function Logger.getOSMemory()
+    local rssMb = nil
+    local availMb = nil
+
+    -- 1. Read process Resident Set Size (RSS) from Linux /proc/self/statm
+    local fStatm = io.open("/proc/self/statm", "r")
+    if fStatm then
+        local content = fStatm:read("*all")
+        fStatm:close()
+        local _, rssPages = content:match("(%d+)%s+(%d+)")
+        if rssPages then
+            rssMb = (tonumber(rssPages) * 4096) / (1024 * 1024)
+        end
+    end
+
+    -- 2. Read available system RAM from Linux /proc/meminfo
+    local fMem = io.open("/proc/meminfo", "r")
+    if fMem then
+        local content = fMem:read("*all")
+        fMem:close()
+        local availKb = content:match("MemAvailable:%s+(%d+)%s+kB") or content:match("MemFree:%s+(%d+)%s+kB")
+        if availKb then
+            availMb = tonumber(availKb) / 1024
+        end
+    end
+
+    return rssMb, availMb
+end
+
 function Logger.init()
     Logger.startTime = love.timer and love.timer.getTime() or 0
 
-    -- Try opening log.txt in root game directory (append mode)
-    pcall(function()
-        local f = io.open(Logger.logPath, "a")
-        if f then
-            f:write(string.format("\n==================================================\n[SESSION START] %s | QIX Arcade R36S\n==================================================\n", getTimestamp()))
-            f:flush()
-            Logger.logFile = f
-        end
-    end)
-
-    -- Also append to Love2D saves directory
-    pcall(function()
-        love.filesystem.append(Logger.saveLogPath, string.format("\n[SESSION START] %s\n", getTimestamp()))
-    end)
+    print(string.format("\n==================================================\n[SESSION START] %s | QIX Arcade R36S\n==================================================", getTimestamp()))
+    io.stdout:flush()
 
     Logger.info("SYSTEM", "Logger initialized. OS: %s | Love: %s", love.system.getOS(), love._version)
+    local osRss, osAvail = Logger.getOSMemory()
+    if osRss or osAvail then
+        Logger.info("SYSTEM", "Linux Memory: Process RSS: %s | Device Available RAM: %s",
+            osRss and string.format("%.1f MB", osRss) or "N/A",
+            osAvail and string.format("%.1f MB", osAvail) or "N/A")
+    end
+
     if love.graphics then
         local renderer, version, vendor, device = love.graphics.getRendererInfo()
         Logger.info("GRAPHICS", "Renderer: %s | Version: %s | Vendor: %s | Device: %s", renderer, version, vendor, device)
         local limits = love.graphics.getSystemLimits()
         Logger.info("GRAPHICS", "Max Texture Size: %d | MultiCanvas: %s", limits.texturesize or 0, tostring(limits.multicanvas))
     end
-
-    Logger.installNativeSignalHandler()
-end
-
-function Logger.installNativeSignalHandler()
-    pcall(function()
-        local ok, ffi = pcall(require, "ffi")
-        if not ok or not ffi then return end
-
-        ffi.cdef[[
-            typedef void (*sighandler_t)(int);
-            sighandler_t signal(int signum, sighandler_t handler);
-            int backtrace(void **buffer, int size);
-            void backtrace_symbols_fd(void *const *buffer, int size, int fd);
-            int write(int fd, const void *buf, size_t count);
-            void _exit(int status);
-        ]]
-
-        local onSignal = ffi.cast("sighandler_t", function(sig)
-            local msg = string.format("\n==================================================\n[FATAL NATIVE SIGNAL %d (SIGSEGV/CRASH)]\nEngine crashed at native C/C++ driver level!\n--- C Stack Backtrace ---\n", tonumber(sig))
-            ffi.C.write(1, msg, #msg)
-            local buf = ffi.new("void*[64]")
-            local frames = ffi.C.backtrace(buf, 64)
-            ffi.C.backtrace_symbols_fd(buf, frames, 1)
-            local endMsg = "==================================================\n"
-            ffi.C.write(1, endMsg, #endMsg)
-            ffi.C._exit(128 + tonumber(sig))
-        end)
-
-        ffi.C.signal(11, onSignal) -- SIGSEGV
-        ffi.C.signal(4, onSignal)  -- SIGILL
-        ffi.C.signal(7, onSignal)  -- SIGBUS
-        ffi.C.signal(8, onSignal)  -- SIGFPE
-        Logger.info("SYSTEM", "Native crash signal handler installed (SIGSEGV, SIGBUS, SIGFPE, SIGILL).")
-    end)
 end
 
 function Logger.formatLog(level, tag, msg, ...)
@@ -88,22 +96,19 @@ function Logger.formatLog(level, tag, msg, ...)
 end
 
 function Logger.write(line)
-    -- 1. Output to stdout (captured by PortMaster tee to log.txt)
-    print(line)
-    io.stdout:flush()
-
-    -- 2. Output to direct file handle if open
-    if Logger.logFile then
-        pcall(function()
-            Logger.logFile:write(line .. "\n")
-            Logger.logFile:flush()
-        end)
+    -- Record in in-memory rolling flight recorder
+    table.insert(Logger.history, line)
+    if #Logger.history > Logger.MAX_HISTORY then
+        table.remove(Logger.history, 1)
     end
 
-    -- 3. Output to Love save folder
-    pcall(function()
-        love.filesystem.append(Logger.saveLogPath, line .. "\n")
-    end)
+    -- Output to stdout (captured by PortMaster pipe to log.txt)
+    print(line)
+    io.stdout:flush()
+end
+
+function Logger.dumpHistory()
+    return table.concat(Logger.history, "\n")
 end
 
 function Logger.info(tag, msg, ...)
@@ -119,6 +124,19 @@ end
 function Logger.error(tag, msg, ...)
     local line = Logger.formatLog("ERROR", tag, msg, ...)
     Logger.write(line)
+end
+
+function Logger.logImageOp(status, kind, name, w, h, sizeBytes, durationSec, extra)
+    local szStr = sizeBytes and string.format("%.2f MB", sizeBytes / (1024 * 1024)) or "? MB"
+    local durStr = durationSec and string.format("%.0fms", durationSec * 1000) or "?ms"
+    local dimStr = (w and h and w > 0 and h > 0) and string.format("%dx%d", w, h) or "unknown"
+    if status == "LOAD" then
+        Logger.info(kind, "Image loaded: %s (Res: %s | Size: %s | Time: %s)%s", name, dimStr, szStr, durStr, extra and (" | " .. extra) or "")
+    elseif status == "SKIP" or status == "REJECT" then
+        Logger.warn(kind, "Image %s: %s (Res: %s | Size: %s)%s", status, name, dimStr, szStr, extra and (" | " .. extra) or "")
+    elseif status == "ERROR" then
+        Logger.error(kind, "Image error: %s (Res: %s | Size: %s)%s", name, dimStr, szStr, extra and (" | " .. extra) or "")
+    end
 end
 
 function Logger.heartbeat(state, level, score, lives, extra)
@@ -143,8 +161,23 @@ function Logger.heartbeat(state, level, score, lives, extra)
         canvasesCount = stats.canvases or 0
     end
 
-    local detail = string.format("State: %-10s | Lvl: %2d | Score: %6d | Lives: %d | FPS: %2d | LuaMem: %5.1fMB | VRAM: %5.1fMB | Img: %2d | Canv: %d | DC: %2d%s",
-        state or "UNKNOWN", level or 0, score or 0, lives or 0, fps, luaMemMb, texMemMb, imagesCount, canvasesCount, drawCalls,
+    local osRss, osAvail = Logger.getOSMemory()
+    local osMemStr = ""
+    if osRss then
+        osMemStr = string.format(" | RSS: %5.1fMB", osRss)
+        if osAvail then
+            osMemStr = osMemStr .. string.format(" | Avail: %5.1fMB", osAvail)
+        end
+        if osRss > 280 then
+            Logger.warn("MEMORY", "High process RSS memory (%.1f MB)! Risk of memory pressure on RK3326.", osRss)
+        end
+        if osAvail and osAvail < 70 then
+            Logger.warn("MEMORY", "Low device available RAM (%.1f MB)! Approaching system limits.", osAvail)
+        end
+    end
+
+    local detail = string.format("State: %-10s | Lvl: %2d | Score: %6d | Lives: %d | FPS: %2d | LuaMem: %5.1fMB | VRAM: %5.1fMB%s | Img: %2d | Canv: %d | DC: %2d%s",
+        state or "UNKNOWN", level or 0, score or 0, lives or 0, fps, luaMemMb, texMemMb, osMemStr, imagesCount, canvasesCount, drawCalls,
         extra and (" | " .. extra) or "")
     Logger.info("HEARTBEAT", detail)
 end
@@ -165,12 +198,29 @@ function Logger.installErrorHandler()
         -- Write immediately to all outputs
         Logger.write(crashReport)
 
+        local osRss, osAvail = Logger.getOSMemory()
+        if osRss or osAvail then
+            Logger.error("CRASH_DUMP", "OS Memory: Process RSS: %s | Device Available: %s",
+                osRss and string.format("%.1f MB", osRss) or "N/A",
+                osAvail and string.format("%.1f MB", osAvail) or "N/A")
+        end
+
         if love.graphics and love.graphics.getStats then
             local stats = love.graphics.getStats()
             Logger.error("CRASH_DUMP", "VRAM: %.2f MB | Images: %d | Canvases: %d",
                 (stats.texturememory or 0) / (1024 * 1024), stats.images or 0, stats.canvases or 0)
         end
         Logger.error("CRASH_DUMP", "Lua GC Memory: %.2f MB", collectgarbage("count") / 1024)
+
+        local historyDump = Logger.dumpHistory()
+        if historyDump and #historyDump > 0 then
+            Logger.write(string.format("--- Recent Engine Activity (Last %d Events) ---\n%s\n%s\n", #Logger.history, historyDump, banner))
+        end
+
+        local breadcrumbDump = Logger.dumpBreadcrumbs()
+        if breadcrumbDump and #breadcrumbDump > 0 then
+            Logger.write(string.format("--- Recent Engine Breadcrumbs (Last %d Actions) ---\n%s\n%s\n", #Logger.breadcrumbs, breadcrumbDump, banner))
+        end
 
         if not love.window or not love.graphics or not love.event then
             return

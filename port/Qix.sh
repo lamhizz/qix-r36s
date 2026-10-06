@@ -79,9 +79,14 @@ period_size = 1024
 EOF
 export ALSOFT_CONF="$GAMEDIR/alsoft.conf"
 
-# Enable kernel exception tracing and core dumps for crash post-mortem
+# Enable kernel fatal signal reporting and core dumps for crash post-mortem
+$ESUDO sysctl -w kernel.print-fatal-signals=1 2>/dev/null || true
 $ESUDO sysctl -w debug.exception-trace=1 2>/dev/null || true
+$ESUDO sysctl -w kernel.core_pattern="$GAMEDIR/core" 2>/dev/null || true
 ulimit -c unlimited 2>/dev/null || true
+
+# Record dmesg position prior to game start to isolate run-time kernel logs
+DMESG_LINES_BEFORE=$(dmesg 2>/dev/null | wc -l || echo 0)
 
 # Clean up any stale gptokeyb instances from previous runs
 $ESUDO killall -9 gptokeyb gptokeyb2 2>/dev/null || true
@@ -100,11 +105,31 @@ QIX_EXIT_CODE=$?
 echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
 
 if [ $QIX_EXIT_CODE -ne 0 ]; then
-  echo "WARNING: Game exited with status $QIX_EXIT_CODE! Kernel diagnostics:"
+  echo "WARNING: Game exited with status $QIX_EXIT_CODE! Diagnostics:"
+  echo "--- System Memory Info ---"
+  free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" || true
+
+  echo "--- Kernel Messages During This Run ---"
   if [ -n "$ESUDO" ]; then
-    $ESUDO dmesg -T | tail -n 50 || true
+    $ESUDO dmesg -T 2>/dev/null | tail -n +$((DMESG_LINES_BEFORE + 1)) | tail -n 60 || true
   else
-    dmesg -T | tail -n 50 || true
+    dmesg -T 2>/dev/null | tail -n +$((DMESG_LINES_BEFORE + 1)) | tail -n 60 || true
+  fi
+
+  echo "--- Specific Crash / Segfault / OOM Alerts ---"
+  if [ -n "$ESUDO" ]; then
+    $ESUDO dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer" | tail -n 20 || true
+  else
+    dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer" | tail -n 20 || true
+  fi
+
+  if [ -f "$GAMEDIR/core" ]; then
+    echo "--- Found Core Dump ($GAMEDIR/core) ---"
+    ls -lh "$GAMEDIR/core" 2>/dev/null || true
+    if command -v gdb >/dev/null 2>&1; then
+      echo "Running GDB stack trace:"
+      gdb -batch -ex "bt" "$LOVE_BIN" "$GAMEDIR/core" 2>/dev/null || true
+    fi
   fi
 fi
 

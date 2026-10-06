@@ -158,3 +158,95 @@
 [2026-10-05 15:39:52] [0000.12s] [  2.6 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
 [2026-10-05 15:39:52] [0000.13s] [  2.6 MB] [INFO/SYSTEM] Clean game shutdown initiated. Draining audio & GPU command buffers...
 [2026-10-05 15:39:52] [0000.18s] [  2.6 MB] [INFO/SYSTEM] Shutdown cleanup complete. Process exiting safely.
+
+==================================================
+[SESSION START] 2026-10-06 09:04:59 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:04:59] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:04:59] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:04:59] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-06 09:04:59] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Native crash signal handler installed (SIGSEGV, SIGBUS, SIGFPE, SIGILL).
+[2026-10-06 09:04:59] [0000.06s] [  2.6 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+[2026-10-06 09:04:59] [0000.06s] [  2.6 MB] [INFO/SYSTEM] Clean game shutdown initiated. Draining audio & GPU command buffers...
+[2026-10-06 09:04:59] [0000.12s] [  2.6 MB] [INFO/SYSTEM] Shutdown cleanup complete. Process exiting safely.
+
+==================================================
+[SESSION START] 2026-10-06 09:05:16 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:05:16] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:05:16] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:05:16] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-06 09:05:16] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Native crash signal handler installed (SIGSEGV, SIGBUS, SIGFPE, SIGILL).
+[2026-10-06 09:05:16] [0000.12s] [  8.4 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.23s] [  5.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.35s] [  8.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.41s] [  2.6 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.53s] [  8.1 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.64s] [  5.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.77s] [  8.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.84s] [  2.6 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0000.95s] [  8.1 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0001.06s] [  5.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:17] [0001.18s] [  8.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.24s] [  2.6 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.36s] [  8.1 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.46s] [  5.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.59s] [  8.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.66s] [  2.6 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.78s] [  8.1 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0001.90s] [  5.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0002.02s] [  8.2 MB] [INFO/GRID] Loaded foreground skin: test (Source: 2400x1792 -> Grid: 355x251)
+[2026-10-06 09:05:18] [0002.08s] [  2.6 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+
+==================================================
+[SESSION START] 2026-10-06 09:09:46 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:09:46] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:09:46] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:09:46] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-06 09:09:46] [0000.06s] [  2.6 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+[2026-10-06 09:09:46] [0000.06s] [  2.6 MB] [INFO/SYSTEM] Clean game shutdown initiated. Draining audio & GPU command buffers...
+[2026-10-06 09:09:46] [0000.12s] [  2.6 MB] [INFO/SYSTEM] Shutdown cleanup complete. Process exiting safely.
+
+==================================================
+[SESSION START] 2026-10-06 09:09:53 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:09:53] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:09:53] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:09:53] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-06 09:09:53] [0000.05s] [  2.0 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:53] [0000.11s] [  1.4 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:53] [0000.16s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.22s] [  1.8 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.28s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.34s] [  1.5 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.39s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.45s] [  1.8 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.51s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.56s] [  1.5 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.62s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.68s] [  1.8 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.73s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.79s] [  1.5 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.84s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.90s] [  1.8 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0000.96s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0001.01s] [  1.5 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0001.07s] [  1.7 MB] [INFO/GRID] Loaded foreground skin: test (Source: 710x530 -> Grid: 355x251)
+[2026-10-06 09:09:54] [0001.13s] [  1.8 MB] [INFO/GRID] Loaded foreground skin: test (Source: 1024x764 -> Grid: 355x251)
+
+==================================================
+[SESSION START] 2026-10-06 09:22:45 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:22:45] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:22:45] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:22:45] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8
+[2026-10-06 09:22:45] [0000.06s] [  2.6 MB] [INFO/TEST] QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.
+[2026-10-06 09:22:45] [0000.06s] [  2.6 MB] [INFO/SYSTEM] Clean game shutdown initiated. Draining audio & GPU command buffers...
+
+==================================================
+[SESSION START] 2026-10-06 09:23:45 | QIX Arcade R36S
+==================================================
+[2026-10-06 09:23:45] [0000.00s] [  0.6 MB] [INFO/SYSTEM] Logger initialized. OS: OS X | Love: 11.5
+[2026-10-06 09:23:45] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Renderer: OpenGL | Version: 4.1 Metal - 90.5 | Vendor: Apple | Device: Apple M1 Pro
+[2026-10-06 09:23:45] [0000.00s] [  0.6 MB] [INFO/GRAPHICS] Max Texture Size: 16384 | MultiCanvas: 8

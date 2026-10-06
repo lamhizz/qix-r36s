@@ -442,6 +442,7 @@ function game:setState(newState, triggerReason)
     local oldState = self.state
     if oldState == newState then return end
     Logger.info("STATE", "Transition: %s -> %s (trigger: %s)", tostring(oldState), tostring(newState), tostring(triggerReason or "unspecified"))
+    Logger.breadcrumb("STATE", "%s -> %s (%s)", tostring(oldState), tostring(newState), tostring(triggerReason or "unspecified"))
     self.state = newState
 
     if newState == "TITLE" then
@@ -505,7 +506,7 @@ function game:startLevel(levelNum)
     self.nearTargetAlerted = false
     self.shakeDuration = 0
 
-    self.grid:init()
+    self.grid:init(true)
     self.player:reset(cfg)
     Particles.init()
     BorderFX.reset(false)
@@ -519,36 +520,56 @@ function game:startLevel(levelNum)
         Achievements.unlock("veteran_survivor")
     end
 
-    -- Load background art for level uncover (random each time, independent of level)
+    -- Load background art for level uncover (random each time, with automatic resilient retry on rejected/corrupt images)
+    local loadedBg = false
     if #self.artDeck > 0 then
-        local artIndex = 1
-        if #self.artDeck > 1 then
-            repeat
-                artIndex = love.math.random(1, #self.artDeck)
-            until artIndex ~= self.lastArtIndex
-        end
-        self.lastArtIndex = artIndex
+        local attempts = 0
+        local maxAttempts = math.min(8, #self.artDeck)
+        while not loadedBg and attempts < maxAttempts do
+            attempts = attempts + 1
+            local artIndex = 1
+            if #self.artDeck > 1 then
+                repeat
+                    artIndex = love.math.random(1, #self.artDeck)
+                until artIndex ~= self.lastArtIndex or #self.artDeck <= 1
+            end
+            self.lastArtIndex = artIndex
 
-        local chosenArt = self.artDeck[artIndex]
-        self.grid:loadBackground(chosenArt)
-        local artKey = type(chosenArt) == "table" and (chosenArt.name or chosenArt.path) or tostring(chosenArt)
-        Achievements.recordArtViewed(artKey)
-    else
-        self.grid:loadBackground(nil)
+            local chosenArt = self.artDeck[artIndex]
+            loadedBg = self.grid:loadBackground(chosenArt, true)
+            if loadedBg then
+                local artKey = type(chosenArt) == "table" and (chosenArt.name or chosenArt.path) or tostring(chosenArt)
+                Achievements.recordArtViewed(artKey)
+            end
+        end
+    end
+    if not loadedBg then
+        self.grid:loadBackground(nil, true)
     end
 
-    -- Load foreground skin for uncovered playfield (randomly varies each round)
+    -- Load foreground skin for uncovered playfield (randomly varies each round with resilient fallback)
+    local loadedFg = false
     if #self.foregroundDeck > 0 then
-        local fgIndex = love.math.random(1, #self.foregroundDeck)
-        if #self.foregroundDeck > 1 and self.lastFgIndex and fgIndex == self.lastFgIndex then
-            fgIndex = (fgIndex % #self.foregroundDeck) + 1
+        local attempts = 0
+        local maxAttempts = math.min(5, #self.foregroundDeck)
+        while not loadedFg and attempts < maxAttempts do
+            attempts = attempts + 1
+            local fgIndex = love.math.random(1, #self.foregroundDeck)
+            if #self.foregroundDeck > 1 and self.lastFgIndex and fgIndex == self.lastFgIndex then
+                fgIndex = (fgIndex % #self.foregroundDeck) + 1
+            end
+            self.lastFgIndex = fgIndex
+            local chosenFg = self.foregroundDeck[fgIndex]
+            loadedFg = self.grid:loadForeground(chosenFg, true)
         end
-        self.lastFgIndex = fgIndex
-        local chosenFg = self.foregroundDeck[fgIndex]
-        self.grid:loadForeground(chosenFg)
-    else
-        self.grid:loadForeground(nil)
     end
+    if not loadedFg then
+        self.grid:loadForeground(nil, true)
+    end
+
+    -- Single authoritative pixel refresh and GPU texture upload for the new round
+    self.grid:updateAllPixels()
+    collectgarbage("collect")
 
     -- Spawn Qix: Level 1-2 has 1 Qix; Level 3+ has 2 independent Qixes!
     self.qixList = {}
@@ -896,7 +917,7 @@ function love.update(dt)
                 game:setState("GAME_OVER", "lives_depleted")
                 game.gameOverAnim = {
                     timer = 0,
-                    cardY = 480,
+                    cardY = 160,
                     targetCardY = 22,
                     displayScore = 0,
                     tallySpeed = math.max(120, math.floor(game.score / 1.0)),
@@ -909,6 +930,7 @@ function love.update(dt)
                 }
                 Logger.info("GAME", "Game Over! Score: %d | Level: %d | Cuts: %d | New Record: %s",
                     game.score, game.level, game.totalCuts or 0, tostring(game.isNewRecord))
+                Logger.breadcrumb("GAME", "Game Over initialized. DisplayScore=0 TargetScore=%d", game.score)
             end
         end
 
@@ -1435,6 +1457,12 @@ function love.draw()
     elseif game.state == "LEVEL_CLEAR" then
         -- During Level Clear: Unveil 100% full artwork unobstructed in FIT mode!
         game:drawLevelClear()
+    elseif game.state == "GAME_OVER" then
+        -- During Game Over: Draw grid underneath cleanly and debriefing card
+        if game.grid then
+            game.grid:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        end
+        game:drawGameOver()
     else
         -- Draw Top Arcade HUD Bar
         game:drawHUD()
@@ -1515,8 +1543,6 @@ function love.draw()
         -- Overlay States
         if game.state == "PAUSED" then
             game:drawPauseMenu()
-        elseif game.state == "GAME_OVER" then
-            game:drawGameOver()
         end
     end
 
@@ -2381,192 +2407,207 @@ local function getPilotRank(score)
 end
 
 function game:drawGameOver()
-    local anim = self.gameOverAnim or {
-        cardY = 22,
-        displayScore = self.score,
-        tallyDone = true,
-        rankRevealed = true,
-        selectedButton = 1,
-        shimmer = 0
-    }
+    local ok, err = pcall(function()
+        local anim = self.gameOverAnim or {
+            cardY = 22,
+            displayScore = self.score,
+            tallyDone = true,
+            rankRevealed = true,
+            selectedButton = 1,
+            shimmer = 0
+        }
 
-    -- 1. Dim Backdrop with animated cyber grid
-    love.graphics.setColor(0.02, 0.03, 0.06, 0.90)
-    love.graphics.rectangle("fill", 0, 0, 640, 480)
+        -- 1. Dim Backdrop with animated cyber grid
+        love.graphics.setColor(0.02, 0.03, 0.06, 0.92)
+        love.graphics.rectangle("fill", 0, 0, 640, 480)
 
-    -- 2. Mission Debriefing Card Frame (smoothly animated entry from bottom)
-    local cardX = 46
-    local cardY = math.floor(anim.cardY or 22)
-    local cardW = 548
-    local cardH = 436
+        -- 2. Mission Debriefing Card Frame (smoothly animated entry from bottom)
+        local cardX = 46
+        local cardY = math.floor(math.max(16, math.min(180, anim.cardY or 22)))
+        local cardW = 548
+        local cardH = 436
 
-    -- Card shadow
-    love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", cardX + 4, cardY + 4, cardW, cardH, 10, 10)
+        -- Card shadow
+        love.graphics.setColor(0, 0, 0, 0.7)
+        love.graphics.rectangle("fill", cardX + 4, cardY + 4, cardW, cardH, 8, 8)
 
-    -- Card background
-    love.graphics.setColor(0.04, 0.06, 0.10, 0.97)
-    love.graphics.rectangle("fill", cardX, cardY, cardW, cardH, 10, 10)
+        -- Card background
+        love.graphics.setColor(0.04, 0.06, 0.10, 0.97)
+        love.graphics.rectangle("fill", cardX, cardY, cardW, cardH, 8, 8)
 
-    -- Pulsing animated border
-    local pulse = 0.8 + 0.2 * math.sin(love.timer.getTime() * 5)
-    love.graphics.setLineWidth(2)
-    if self.isNewRecord then
-        love.graphics.setColor(1.0, 0.85, 0.15, 0.95 * pulse)
-    else
-        love.graphics.setColor(0.0, 0.85, 1.0, 0.85 * pulse)
-    end
-    love.graphics.rectangle("line", cardX, cardY, cardW, cardH, 10, 10)
+        -- Pulsing animated border
+        local pulse = 0.8 + 0.2 * math.sin(love.timer.getTime() * 5)
+        love.graphics.setLineWidth(2)
+        if self.isNewRecord then
+            love.graphics.setColor(1.0, 0.85, 0.15, 0.95 * pulse)
+        else
+            love.graphics.setColor(0.0, 0.85, 1.0, 0.85 * pulse)
+        end
+        love.graphics.rectangle("line", cardX, cardY, cardW, cardH, 8, 8)
 
-    -- Header Divider
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.line(cardX + 20, cardY + 44, cardX + cardW - 20, cardY + 44)
-
-    -- Top Header Title
-    love.graphics.setFont(game.fontMid)
-    if self.isNewRecord then
-        love.graphics.setColor(1.0, 0.88, 0.20, 1.0)
-        love.graphics.printf("★ NEW ALL-TIME RECORD ACHIEVED! ★", cardX, cardY + 14, cardW, "center")
-    else
-        love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.printf("★ MISSION DEBRIEFING ★", cardX, cardY + 14, cardW, "center")
-    end
-
-    -- 3. Upper Hero Section: Final Score & Pilot Rank Badge
-    local rank = getPilotRank(self.score)
-
-    -- Final Score Callout (Left)
-    love.graphics.setFont(game.font)
-    love.graphics.setColor(0.55, 0.75, 0.95, 0.9)
-    love.graphics.print("FINAL SCORE", cardX + 30, cardY + 54)
-
-    local scoreStr = string.format("%06d", anim.displayScore or self.score)
-    love.graphics.setFont(game.fontBig)
-    -- Glow shadow
-    love.graphics.setColor(0.0, 0.85, 1.0, 0.4)
-    love.graphics.print(scoreStr, cardX + 32, cardY + 74)
-    -- Main text
-    love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    love.graphics.print(scoreStr, cardX + 30, cardY + 72)
-
-    love.graphics.setFont(game.font)
-    if self.isNewRecord then
-        love.graphics.setColor(0.25, 1.0, 0.55, 1.0)
-        love.graphics.print("★ NEW HIGH SCORE RECORD SURPASSED! ★", cardX + 30, cardY + 116)
-    else
-        love.graphics.setColor(0.70, 0.78, 0.88, 0.85)
-        love.graphics.print(string.format("ALL-TIME RECORD: %06d", self.highScore), cardX + 30, cardY + 116)
-    end
-
-    -- Pilot Rank Badge (Right)
-    local rx, ry, rw, rh = cardX + 330, cardY + 50, 188, 92
-    love.graphics.setColor(0.08, 0.11, 0.18, 0.92)
-    love.graphics.rectangle("fill", rx, ry, rw, rh, 8, 8)
-
-    love.graphics.setLineWidth(2)
-    if anim.rankRevealed then
-        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
-    else
-        love.graphics.setColor(0.3, 0.4, 0.5, 0.6)
-    end
-    love.graphics.rectangle("line", rx, ry, rw, rh, 8, 8)
-
-    love.graphics.setFont(game.fontSmall)
-    love.graphics.setColor(0.65, 0.72, 0.85, 1.0)
-    love.graphics.printf("PILOT RANK", rx, ry + 8, rw, "center")
-
-    if anim.rankRevealed then
-        love.graphics.setFont(game.fontBig)
-        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 1.0)
-        love.graphics.printf(rank.grade, rx, ry + 24, rw, "center")
-
-        love.graphics.setFont(game.font)
-        love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
-        love.graphics.printf(rank.title, rx, ry + 64, rw, "center")
-    else
-        love.graphics.setFont(game.font)
-        local pulseT = 0.5 + 0.5 * math.sin(love.timer.getTime() * 8)
-        love.graphics.setColor(0.0, 0.95, 1.0, 0.5 + 0.5 * pulseT)
-        love.graphics.printf("[ EVALUATING ]", rx, ry + 40, rw, "center")
-    end
-
-    -- 4. Four Bento Statistics Tiles
-    local tw, th = 234, 60
-    local tx1, tx2 = cardX + 30, cardX + 284
-    local ty1, ty2 = cardY + 152, cardY + 224
-
-    local function drawStatTile(x, y, label, value, valColor)
-        love.graphics.setColor(0.07, 0.09, 0.15, 0.9)
-        love.graphics.rectangle("fill", x, y, tw, th, 6, 6)
+        -- Header Divider
         love.graphics.setLineWidth(1)
-        love.graphics.setColor(0.20, 0.28, 0.42, 0.65)
-        love.graphics.rectangle("line", x, y, tw, th, 6, 6)
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
+        love.graphics.line(cardX + 20, cardY + 44, cardX + cardW - 20, cardY + 44)
+
+        -- Top Header Title
+        love.graphics.setFont(game.fontMid)
+        if self.isNewRecord then
+            love.graphics.setColor(1.0, 0.88, 0.20, 1.0)
+            love.graphics.printf("* NEW ALL-TIME RECORD ACHIEVED! *", cardX, cardY + 14, cardW, "center")
+        else
+            love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
+            love.graphics.printf("* MISSION DEBRIEFING *", cardX, cardY + 14, cardW, "center")
+        end
+
+        -- 3. Upper Hero Section: Final Score & Pilot Rank Badge
+        local rank = getPilotRank(self.score)
+
+        -- Final Score Callout (Left)
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(0.55, 0.75, 0.95, 0.9)
+        love.graphics.print("FINAL SCORE", cardX + 30, cardY + 54)
+
+        local scoreStr = string.format("%06d", anim.displayScore or self.score)
+        love.graphics.setFont(game.fontBig)
+        -- Glow shadow
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.4)
+        love.graphics.print(scoreStr, cardX + 32, cardY + 74)
+        -- Main text
+        love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
+        love.graphics.print(scoreStr, cardX + 30, cardY + 72)
+
+        love.graphics.setFont(game.font)
+        if self.isNewRecord then
+            love.graphics.setColor(0.25, 1.0, 0.55, 1.0)
+            love.graphics.print("* NEW HIGH SCORE SURPASSED! *", cardX + 30, cardY + 116)
+        else
+            love.graphics.setColor(0.70, 0.78, 0.88, 0.85)
+            love.graphics.print(string.format("ALL-TIME RECORD: %06d", self.highScore or 0), cardX + 30, cardY + 116)
+        end
+
+        -- Pilot Rank Badge (Right)
+        local rx, ry, rw, rh = cardX + 330, cardY + 50, 188, 92
+        love.graphics.setColor(0.08, 0.11, 0.18, 0.92)
+        love.graphics.rectangle("fill", rx, ry, rw, rh, 8, 8)
+
+        love.graphics.setLineWidth(2)
+        if anim.rankRevealed and rank and rank.color then
+            love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
+        else
+            love.graphics.setColor(0.3, 0.4, 0.5, 0.6)
+        end
+        love.graphics.rectangle("line", rx, ry, rw, rh, 8, 8)
 
         love.graphics.setFont(game.fontSmall)
-        love.graphics.setColor(0.60, 0.70, 0.82, 0.95)
-        love.graphics.print(label, x + 14, y + 8)
+        love.graphics.setColor(0.65, 0.72, 0.85, 1.0)
+        love.graphics.printf("PILOT RANK", rx, ry + 8, rw, "center")
+
+        if anim.rankRevealed and rank then
+            love.graphics.setFont(game.fontBig)
+            love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 1.0)
+            love.graphics.printf(rank.grade or "A", rx, ry + 24, rw, "center")
+
+            love.graphics.setFont(game.font)
+            love.graphics.setColor(rank.color[1], rank.color[2], rank.color[3], 0.95)
+            love.graphics.printf(rank.title or "PILOT", rx, ry + 64, rw, "center")
+        else
+            love.graphics.setFont(game.font)
+            local pulseT = 0.5 + 0.5 * math.sin(love.timer.getTime() * 8)
+            love.graphics.setColor(0.0, 0.95, 1.0, 0.5 + 0.5 * pulseT)
+            love.graphics.printf("[ EVALUATING ]", rx, ry + 40, rw, "center")
+        end
+
+        -- 4. Four Bento Statistics Tiles
+        local tw, th = 234, 60
+        local tx1, tx2 = cardX + 30, cardX + 284
+        local ty1, ty2 = cardY + 152, cardY + 224
+
+        local function drawStatTile(x, y, label, value, valColor)
+            love.graphics.setColor(0.07, 0.09, 0.15, 0.9)
+            love.graphics.rectangle("fill", x, y, tw, th, 6, 6)
+            love.graphics.setLineWidth(1)
+            love.graphics.setColor(0.20, 0.28, 0.42, 0.65)
+            love.graphics.rectangle("line", x, y, tw, th, 6, 6)
+
+            love.graphics.setFont(game.fontSmall)
+            love.graphics.setColor(0.60, 0.70, 0.82, 0.95)
+            love.graphics.print(label, x + 14, y + 8)
+
+            love.graphics.setFont(game.fontMid)
+            love.graphics.setColor(valColor[1], valColor[2], valColor[3], 1.0)
+            love.graphics.print(value, x + 14, y + 27)
+        end
+
+        local curClaim = (self.grid and self.grid.getClaimedPercent) and self.grid:getClaimedPercent() or 0
+        drawStatTile(tx1, ty1, "SECTOR REACHED", string.format("LEVEL %d", self.level), {0.25, 1.0, 0.55})
+        drawStatTile(tx2, ty1, "GRID CLAIMED", string.format("%.1f%%", curClaim), {0.0, 0.95, 1.0})
+        drawStatTile(tx1, ty2, "BEST SINGLE CUT", string.format("%.1f%%", self.bestCutPercent or 0), {1.0, 0.85, 0.20})
+        drawStatTile(tx2, ty2, "TOTAL STIX LINES", string.format("%d CUTS", self.totalCuts or 0), {1.0, 0.35, 0.85})
+
+        -- 5. Lower Action Pill Buttons (with Interactive Navigation Highlight)
+        local sepY = cardY + 300
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
+        love.graphics.line(cardX + 20, sepY, cardX + cardW - 20, sepY)
+
+        local bw, bh = 224, 44
+        local bx1 = cardX + 32
+        local bx2 = cardX + 292
+        local by = cardY + 314
+        local selBtn = anim.selectedButton or 1
+
+        -- Button 1: Play Again
+        local btn1Pulse = (selBtn == 1) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
+        if selBtn == 1 then
+            love.graphics.setColor(0.04, 0.38, 0.20, 0.95)
+        else
+            love.graphics.setColor(0.04, 0.16, 0.10, 0.7)
+        end
+        love.graphics.rectangle("fill", bx1, by, bw, bh, 8, 8)
+        love.graphics.setLineWidth((selBtn == 1) and 2 or 1)
+        love.graphics.setColor(0.20, 1.0, 0.50, btn1Pulse)
+        love.graphics.rectangle("line", bx1, by, bw, bh, 8, 8)
 
         love.graphics.setFont(game.fontMid)
-        love.graphics.setColor(valColor[1], valColor[2], valColor[3], 1.0)
-        love.graphics.print(value, x + 14, y + 27)
+        love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
+        local btn1Text = (selBtn == 1) and "> (A) PLAY AGAIN" or "(A) PLAY AGAIN"
+        love.graphics.printf(btn1Text, bx1, by + 12, bw, "center")
+
+        -- Button 2: Main Menu
+        local btn2Pulse = (selBtn == 2) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
+        if selBtn == 2 then
+            love.graphics.setColor(0.12, 0.22, 0.40, 0.95)
+        else
+            love.graphics.setColor(0.06, 0.09, 0.15, 0.7)
+        end
+        love.graphics.rectangle("fill", bx2, by, bw, bh, 8, 8)
+        love.graphics.setLineWidth((selBtn == 2) and 2 or 1)
+        love.graphics.setColor(0.35, 0.75, 1.0, btn2Pulse)
+        love.graphics.rectangle("line", bx2, by, bw, bh, 8, 8)
+
+        love.graphics.setFont(game.fontMid)
+        love.graphics.setColor(0.85, 0.90, 1.0, 1.0)
+        local btn2Text = (selBtn == 2) and "> (B) MAIN MENU" or "(B) MAIN MENU"
+        love.graphics.printf(btn2Text, bx2, by + 12, bw, "center")
+
+        -- Footer Guidance
+        love.graphics.setFont(game.font)
+        love.graphics.setColor(0.55, 0.68, 0.85, 0.95)
+        love.graphics.printf("</>: CHOOSE   |   (A)/START: CONFIRM   |   (B): MENU", 0, cardY + 386, 640, "center")
+    end)
+
+    if not ok then
+        Logger.error("DRAW", "drawGameOver error: %s", tostring(err))
+        -- Emergency fallback simple UI
+        love.graphics.setColor(0, 0, 0, 0.9)
+        love.graphics.rectangle("fill", 80, 120, 480, 240)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setFont(game.fontMid or love.graphics.getFont())
+        love.graphics.printf("GAME OVER", 80, 160, 480, "center")
+        love.graphics.printf(string.format("SCORE: %d", self.score or 0), 80, 200, 480, "center")
+        love.graphics.printf("PRESS (A) TO PLAY AGAIN - (B) FOR MENU", 80, 260, 480, "center")
     end
-
-    drawStatTile(tx1, ty1, "SECTOR REACHED", string.format("LEVEL %d", self.level), {0.25, 1.0, 0.55})
-    drawStatTile(tx2, ty1, "GRID CLAIMED", string.format("%.1f%%", self.grid:getClaimedPercent()), {0.0, 0.95, 1.0})
-    drawStatTile(tx1, ty2, "BEST SINGLE CUT", string.format("%.1f%%", self.bestCutPercent or 0), {1.0, 0.85, 0.20})
-    drawStatTile(tx2, ty2, "TOTAL STIX LINES", string.format("%d CUTS", self.totalCuts or 0), {1.0, 0.35, 0.85})
-
-    -- 5. Lower Action Pill Buttons (with Interactive Navigation Highlight)
-    local sepY = cardY + 300
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(0.0, 0.85, 1.0, 0.35)
-    love.graphics.line(cardX + 20, sepY, cardX + cardW - 20, sepY)
-
-    local bw, bh = 224, 44
-    local bx1 = cardX + 32
-    local bx2 = cardX + 292
-    local by = cardY + 314
-    local selBtn = anim.selectedButton or 1
-
-    -- Button 1: Play Again
-    local btn1Pulse = (selBtn == 1) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
-    if selBtn == 1 then
-        love.graphics.setColor(0.04, 0.38, 0.20, 0.95)
-    else
-        love.graphics.setColor(0.04, 0.16, 0.10, 0.7)
-    end
-    love.graphics.rectangle("fill", bx1, by, bw, bh, 8, 8)
-    love.graphics.setLineWidth((selBtn == 1) and 2 or 1)
-    love.graphics.setColor(0.20, 1.0, 0.50, btn1Pulse)
-    love.graphics.rectangle("line", bx1, by, bw, bh, 8, 8)
-
-    love.graphics.setFont(game.fontMid)
-    love.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    local btn1Text = (selBtn == 1) and "► (A) PLAY AGAIN" or "(A) PLAY AGAIN"
-    love.graphics.printf(btn1Text, bx1, by + 12, bw, "center")
-
-    -- Button 2: Main Menu
-    local btn2Pulse = (selBtn == 2) and (0.8 + 0.2 * math.sin(love.timer.getTime() * 8)) or 0.6
-    if selBtn == 2 then
-        love.graphics.setColor(0.12, 0.22, 0.40, 0.95)
-    else
-        love.graphics.setColor(0.06, 0.09, 0.15, 0.7)
-    end
-    love.graphics.rectangle("fill", bx2, by, bw, bh, 8, 8)
-    love.graphics.setLineWidth((selBtn == 2) and 2 or 1)
-    love.graphics.setColor(0.35, 0.75, 1.0, btn2Pulse)
-    love.graphics.rectangle("line", bx2, by, bw, bh, 8, 8)
-
-    love.graphics.setFont(game.fontMid)
-    love.graphics.setColor(0.85, 0.90, 1.0, 1.0)
-    local btn2Text = (selBtn == 2) and "► (B) MAIN MENU" or "(B) MAIN MENU"
-    love.graphics.printf(btn2Text, bx2, by + 12, bw, "center")
-
-    -- Footer Guidance
-    love.graphics.setFont(game.font)
-    love.graphics.setColor(0.55, 0.68, 0.85, 0.95)
-    love.graphics.printf("◄/►: CHOOSE   •   (A)/START: CONFIRM   •   (B): MENU", 0, cardY + 386, 640, "center")
 end
 
 function love.quit()

@@ -43,23 +43,145 @@ end
 
 local Logger = require("logger")
 
+-- ==============================================================================
+-- Fast Binary Image Header Inspector (Pure Lua)
+-- Reads first 64KB to extract image format, dimensions, file size and safety flags
+-- WITHOUT decoding the full bitmap into memory, protecting RK3326 against OOM.
+-- ==============================================================================
+local function parseImageHeader(head, fileSize)
+    if not head or #head < 16 then
+        return { safe = true, format = "unknown", width = 0, height = 0, fileSize = fileSize or 0 }
+    end
+
+    local meta = {
+        fileSize = fileSize or #head,
+        format = "unknown",
+        width = 0,
+        height = 0,
+        components = 3,
+        isProgressive = false,
+        safe = true,
+        reason = nil
+    }
+
+    -- 1. Check PNG signature (8 bytes: 137 80 78 71 13 10 26 10)
+    if head:sub(1, 8) == "\137PNG\r\n\026\n" then
+        meta.format = "PNG"
+        if #head >= 24 and head:sub(13, 16) == "IHDR" then
+            local b1, b2, b3, b4 = head:byte(17, 20)
+            local b5, b6, b7, b8 = head:byte(21, 24)
+            meta.width = b1 * 16777216 + b2 * 65536 + b3 * 256 + b4
+            meta.height = b5 * 16777216 + b6 * 65536 + b7 * 256 + b8
+        end
+    -- 2. Check JPEG signature (0xFF, 0xD8)
+    elseif head:sub(1, 2) == "\255\216" then
+        meta.format = "JPEG"
+        local i = 3
+        local len = #head
+        while i < len - 8 do
+            if head:byte(i) == 255 then
+                local marker = head:byte(i + 1)
+                while i < len - 1 and head:byte(i + 1) == 255 do
+                    i = i + 1
+                    marker = head:byte(i + 1)
+                end
+                if marker == 0xD8 or marker == 0xD9 or marker == 0x00 then
+                    i = i + 2
+                else
+                    if i + 3 > len then break end
+                    local l1, l2 = head:byte(i + 2, i + 3)
+                    local segLen = l1 * 256 + l2
+                    if (marker >= 0xC0 and marker <= 0xCF) and (marker ~= 0xC4 and marker ~= 0xC8 and marker ~= 0xCC) then
+                        if i + 9 <= len then
+                            local h1, h2 = head:byte(i + 5, i + 6)
+                            local w1, w2 = head:byte(i + 7, i + 8)
+                            meta.height = h1 * 256 + h2
+                            meta.width = w1 * 256 + w2
+                            meta.components = head:byte(i + 9) or 3
+                            meta.isProgressive = (marker == 0xC2 or marker == 0xC6 or marker == 0xCA or marker == 0xCE)
+                        end
+                        break
+                    end
+                    i = i + 2 + segLen
+                end
+            else
+                i = i + 1
+            end
+        end
+    end
+
+    -- Safety constraints for RK3326 handheld (1 GB shared system RAM)
+    local maxFileSize = 6.0 * 1024 * 1024 -- 6.0 MB maximum file size
+    local maxPixels = 16000000            -- 16 Megapixels maximum (e.g. 4000x4000)
+    local maxDim = 4096                   -- Max single dimension
+
+    if meta.fileSize > maxFileSize then
+        meta.safe = false
+        meta.reason = string.format("File size %.2f MB exceeds 6.0 MB limit", meta.fileSize / (1024 * 1024))
+    elseif meta.width > 0 and meta.height > 0 then
+        local px = meta.width * meta.height
+        if px > maxPixels then
+            meta.safe = false
+            meta.reason = string.format("Resolution %dx%d (%0.1f MP) exceeds 16 MP limit", meta.width, meta.height, px / 1000000)
+        elseif meta.width > maxDim or meta.height > maxDim then
+            meta.safe = false
+            meta.reason = string.format("Dimension (%dx%d) exceeds 4096px limit", meta.width, meta.height)
+        elseif meta.components == 4 then
+            meta.safe = false
+            meta.reason = "CMYK color format unsupported (RGB required)"
+        end
+    end
+
+    return meta
+end
+
+local function inspectImageFile(path, isExternal)
+    if isExternal then
+        local f = io.open(path, "rb")
+        if not f then return nil, "cannot_open" end
+        local sz = f:seek("end") or 0
+        f:seek("set", 0)
+        local head = f:read(65536) or ""
+        f:close()
+        return parseImageHeader(head, sz)
+    else
+        local info = love.filesystem.getInfo(path)
+        if not info then return nil, "not_found" end
+        local head = love.filesystem.read(path, 65536) or ""
+        return parseImageHeader(head, info.size or #head)
+    end
+end
+
 local function loadSafeImage(path, isExternal, maxW, maxH)
     maxW = maxW or 640
     maxH = maxH or 480
+    local startTime = love.timer and love.timer.getTime() or 0
+    local name = path:match("([^/\\]+)$") or tostring(path)
+
+    -- 1. Fast binary header pre-flight inspection
+    local meta = inspectImageFile(path, isExternal)
+    if meta and not meta.safe then
+        Logger.logImageOp("REJECT", "GRID", name, meta.width, meta.height, meta.fileSize, 0, meta.reason)
+        return nil, 0, 0, 0, 0, meta.reason
+    end
+
     local rawData = nil
-    local fileData = nil
 
     if isExternal then
         local f = io.open(path, "rb")
         if f then
             local data = f:read("*all")
             f:close()
-            local filename = path:match("([^/\\]+)$") or "art.jpg"
+            local filename = name or "art.jpg"
             local okData, fd = pcall(love.filesystem.newFileData, data, filename)
+            data = nil
             if okData and fd then
                 local okImg, id = pcall(love.image.newImageData, fd)
+                fd = nil
                 if okImg and id then
                     rawData = id
+                else
+                    Logger.logImageOp("ERROR", "GRID", name, meta and meta.width, meta and meta.height, meta and meta.fileSize, 0, "ImageData decoding failed")
                 end
             end
         end
@@ -82,7 +204,10 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
     -- If image fits within limits, create image directly
     if srcW <= maxW and srcH <= maxH then
         local ok, img = pcall(love.graphics.newImage, rawData)
+        rawData = nil
+        local dur = (love.timer and love.timer.getTime() or 0) - startTime
         if ok and img then
+            Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, "1:1 Native")
             return img, srcW, srcH, srcW, srcH
         end
         return nil
@@ -95,6 +220,7 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
 
     local okData, compactData = pcall(love.image.newImageData, dstW, dstH)
     if not okData or not compactData then
+        rawData = nil
         return nil
     end
 
@@ -108,19 +234,23 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
             compactData:setPixel(dx, dy, r, g, b, a)
         end
     end
+    rawData = nil
 
     local ok, img = pcall(love.graphics.newImage, compactData)
+    compactData = nil
+    local dur = (love.timer and love.timer.getTime() or 0) - startTime
     if ok and img then
+        Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, string.format("Downscaled to GPU %dx%d", dstW, dstH))
         return img, srcW, srcH, dstW, dstH
     end
     return nil
 end
 
-function Grid:loadBackground(artEntry)
+function Grid:loadBackground(artEntry, deferUpdate)
     self.bgImage = nil
 
     if not artEntry then
-        self:updateAllPixels()
+        if not deferUpdate then self:updateAllPixels() end
         return false
     end
 
@@ -133,30 +263,37 @@ function Grid:loadBackground(artEntry)
     if img then
         self.bgImage = img
         self.bgImage:setFilter("linear", "linear")
-        self:updateAllPixels()
-        local name = type(artEntry) == "table" and artEntry.name or tostring(path)
-        Logger.info("GRID", "Loaded background: %s (Original: %dx%d -> GPU: %dx%d)", name, srcW or 0, srcH or 0, dstW or 0, dstH or 0)
+        if not deferUpdate then self:updateAllPixels() end
         return true
-    else
-        Logger.warn("GRID", "Failed to load background image: %s", tostring(path))
     end
 
-    self:updateAllPixels()
+    if not deferUpdate then self:updateAllPixels() end
     return false
 end
 
-function Grid:loadForeground(fgEntry)
+function Grid:loadForeground(fgEntry, deferUpdate)
     self.fgImage = nil
     self.fgGridData = nil
 
     if not fgEntry then
-        self:updateAllPixels()
+        if not deferUpdate then self:updateAllPixels() end
         return false
     end
 
     local path = type(fgEntry) == "table" and fgEntry.path or fgEntry
     local isExternal = (type(fgEntry) == "table" and fgEntry.isExternal) or
                        (type(path) == "string" and (path:sub(1, 1) == "/" or path:match("^[A-Za-z]:")))
+
+    local name = type(fgEntry) == "table" and fgEntry.name or (path:match("([^/\\]+)$") or tostring(path))
+    local startTime = love.timer and love.timer.getTime() or 0
+
+    -- 1. Pre-flight binary header inspection
+    local meta = inspectImageFile(path, isExternal)
+    if meta and not meta.safe then
+        Logger.logImageOp("REJECT", "GRID", name, meta.width, meta.height, meta.fileSize, 0, meta.reason)
+        if not deferUpdate then self:updateAllPixels() end
+        return false
+    end
 
     local imgData = nil
 
@@ -165,12 +302,16 @@ function Grid:loadForeground(fgEntry)
         if f then
             local data = f:read("*all")
             f:close()
-            local filename = path:match("([^/\\]+)$") or "fg.jpg"
+            local filename = name or "fg.jpg"
             local okData, fd = pcall(love.filesystem.newFileData, data, filename)
+            data = nil
             if okData and fd then
                 local okImg, loadedData = pcall(love.image.newImageData, fd)
+                fd = nil
                 if okImg and loadedData then
                     imgData = loadedData
+                else
+                    Logger.logImageOp("ERROR", "GRID", name, meta and meta.width, meta and meta.height, meta and meta.fileSize, 0, "Foreground ImageData decoding failed")
                 end
             end
         end
@@ -206,18 +347,19 @@ function Grid:loadForeground(fgEntry)
                 self.fgGridData:setPixel(gx, gy, r, g, b, 1.0)
             end
         end
+        imgData = nil
 
-        self:updateAllPixels()
-        local name = type(fgEntry) == "table" and fgEntry.name or tostring(path)
-        Logger.info("GRID", "Loaded foreground skin: %s (Source: %dx%d -> Grid: %dx%d)", name, srcW, srcH, targetW, targetH)
+        if not deferUpdate then self:updateAllPixels() end
+        local dur = (love.timer and love.timer.getTime() or 0) - startTime
+        Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, string.format("Fitted to Grid %dx%d", targetW, targetH))
         return true
     end
 
-    self:updateAllPixels()
+    if not deferUpdate then self:updateAllPixels() end
     return false
 end
 
-function Grid:init()
+function Grid:init(deferUpdate)
     for i = 0, self.size - 1 do
         self.cells[i] = CELL_EMPTY
     end
@@ -233,7 +375,9 @@ function Grid:init()
         self.cells[y * self.width + (self.width - 1)] = CELL_BORDER -- Right edge
     end
 
-    self:updateAllPixels()
+    if not deferUpdate then
+        self:updateAllPixels()
+    end
 end
 
 function Grid:index(x, y)
