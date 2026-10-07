@@ -738,8 +738,10 @@ function game:onAreaCaptured(captureResult)
 end
 
 function game:onPlayerDeath(reason, hitGridX, hitGridY)
-    Audio.stopAll()
-    Audio.play("death")
+    if self.state == "DEAD" or self.state == "GAME_OVER" or self.player.state == Player.STATE_DEAD then
+        return
+    end
+
     self:setState("DEAD", reason or "player_death")
     self.player.state = Player.STATE_DEAD
     self.lives = self.lives - 1
@@ -747,13 +749,16 @@ function game:onPlayerDeath(reason, hitGridX, hitGridY)
     Logger.info("GAME", "Player lost life (%s). Remaining lives: %d | Level: %d | Score: %d",
         reason or "unknown", self.lives, self.level, self.score)
 
+    Audio.stopAll()
+    Audio.play("death")
+
     -- Fiery arcade explosion burst (incandescent white-gold, blazing yellow, fire orange, deep crimson)
     local px = self.offsetX + self.player.x * self.scaleX
     local py = self.offsetY + self.player.y * self.scaleY
     local hx = hitGridX and (self.offsetX + hitGridX * self.scaleX) or nil
     local hy = hitGridY and (self.offsetY + hitGridY * self.scaleY) or nil
 
-    Particles.spawnDeathBurst(px, py, hx, hy, self.player.stixPath, self.offsetX, self.offsetY, self.scaleX, self.scaleY)
+    pcall(Particles.spawnDeathBurst, px, py, hx, hy, self.player.stixPath, self.offsetX, self.offsetY, self.scaleX, self.scaleY)
 
     -- Screen shake impact (enhanced for heavy explosion punch)
     self.shakeDuration = 0.40
@@ -871,7 +876,7 @@ function love.update(dt)
         )
 
         -- Update Qix entities and Sparx enemies (frozen while Chrono Freeze is active)
-        if game.freezeTimer <= 0 then
+        if game.freezeTimer <= 0 and game.state == "PLAYING" then
             for _, qix in ipairs(game.qixList) do
                 qix:update(dt)
                 -- Check collision with player's active stix line
@@ -882,11 +887,13 @@ function love.update(dt)
                 end
             end
 
-            for _, spx in ipairs(game.sparxList) do
-                spx:update(dt, game.player)
-                if spx:checkPlayerCollision(game.player) then
-                    game:onPlayerDeath("sparx", spx.x, spx.y)
-                    break
+            if game.state == "PLAYING" then
+                for _, spx in ipairs(game.sparxList) do
+                    spx:update(dt, game.player)
+                    if spx:checkPlayerCollision(game.player) then
+                        game:onPlayerDeath("sparx", spx.x, spx.y)
+                        break
+                    end
                 end
             end
         end
@@ -1504,10 +1511,10 @@ function love.draw()
         game.player:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
 
         -- Draw Visual FX Particles (Plasma cutting sparks, capture bursts, death shards)
-        Particles.draw()
+        pcall(Particles.draw)
 
         -- Draw Ambient Flyby Spaceships (diagonal visual crossing with neon trail light)
-        AmbientShips.draw()
+        pcall(AmbientShips.draw)
 
         -- Draw Floating Score Popups (set font once)
         if #game.floatingScores > 0 then

@@ -102,9 +102,14 @@ end
 
 function Audio.play(name)
     if Audio.muted or not sounds[name] then return end
-    sounds[name]:stop()
-    sounds[name]:setVolume(Audio.volume)
-    sounds[name]:play()
+    pcall(function()
+        local s = sounds[name]
+        if s:isPlaying() then
+            s:stop()
+        end
+        s:setVolume(Audio.volume)
+        s:play()
+    end)
 end
 
 function Audio.startDraw(isSlow)
@@ -112,41 +117,45 @@ function Audio.startDraw(isSlow)
     Audio.stopDraw()
     local src = isSlow and sounds.drawSlow or sounds.drawFast
     if src then
-        src:setVolume(Audio.volume * 0.6)
-        src:play()
+        pcall(function()
+            src:setVolume(Audio.volume * 0.6)
+            src:play()
+        end)
         activeLoops.draw = src
     end
 end
 
 function Audio.stopDraw()
     if activeLoops.draw then
-        activeLoops.draw:stop()
+        local src = activeLoops.draw
         activeLoops.draw = nil
+        pcall(function() src:stop() end)
     end
 end
 
 function Audio.startFuse()
     if Audio.muted or activeLoops.fuse then return end
     if sounds.fuse then
-        sounds.fuse:setVolume(Audio.volume * 0.8)
-        sounds.fuse:play()
+        pcall(function()
+            sounds.fuse:setVolume(Audio.volume * 0.8)
+            sounds.fuse:play()
+        end)
         activeLoops.fuse = sounds.fuse
     end
 end
 
 function Audio.stopFuse()
     if activeLoops.fuse then
-        activeLoops.fuse:stop()
+        local src = activeLoops.fuse
         activeLoops.fuse = nil
+        pcall(function() src:stop() end)
     end
 end
 
 function Audio.stopAll()
-    Audio.stopDraw()
-    Audio.stopFuse()
-    for _, s in pairs(sounds) do
-        s:stop()
-    end
+    activeLoops.draw = nil
+    activeLoops.fuse = nil
+    pcall(love.audio.stop)
 end
 
 function Audio.toggleMute()

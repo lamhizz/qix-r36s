@@ -82,7 +82,8 @@ export ALSOFT_CONF="$GAMEDIR/alsoft.conf"
 # Enable kernel fatal signal reporting and core dumps for crash post-mortem
 $ESUDO sysctl -w kernel.print-fatal-signals=1 2>/dev/null || true
 $ESUDO sysctl -w debug.exception-trace=1 2>/dev/null || true
-$ESUDO sysctl -w kernel.core_pattern="$GAMEDIR/core" 2>/dev/null || true
+# Direct core dumps to /tmp (tmpfs in RAM) because FAT32/exFAT SD cards truncate core dumps to 0 bytes
+$ESUDO sysctl -w kernel.core_pattern="/tmp/core" 2>/dev/null || true
 ulimit -c unlimited 2>/dev/null || true
 
 # Record dmesg position prior to game start to isolate run-time kernel logs
@@ -123,12 +124,19 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
     dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer" | tail -n 20 || true
   fi
 
-  if [ -f "$GAMEDIR/core" ]; then
-    echo "--- Found Core Dump ($GAMEDIR/core) ---"
-    ls -lh "$GAMEDIR/core" 2>/dev/null || true
+  CORE_FILE=""
+  if [ -f "/tmp/core" ]; then
+    CORE_FILE="/tmp/core"
+  elif [ -f "$GAMEDIR/core" ]; then
+    CORE_FILE="$GAMEDIR/core"
+  fi
+
+  if [ -n "$CORE_FILE" ]; then
+    echo "--- Found Core Dump ($CORE_FILE) ---"
+    ls -lh "$CORE_FILE" 2>/dev/null || true
     if command -v gdb >/dev/null 2>&1; then
       echo "Running GDB stack trace:"
-      gdb -batch -ex "bt" "$LOVE_BIN" "$GAMEDIR/core" 2>/dev/null || true
+      gdb -batch -ex "bt" -ex "bt full" "$LOVE_BIN" "$CORE_FILE" 2>/dev/null || true
     fi
   fi
 fi

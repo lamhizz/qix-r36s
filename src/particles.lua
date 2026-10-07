@@ -159,14 +159,20 @@ local function spawnExplosionAt(cx, cy, shardCount, sparkCount, minSpeed, maxSpe
 end
 
 function Particles.spawnDeathBurst(px, py, hx, hy, stixPath, offsetX, offsetY, scaleX, scaleY)
+    -- Clamped screen coordinates (0..640, 0..480)
+    px = px and math.max(0, math.min(640, px)) or 320
+    py = py and math.max(0, math.min(480, py)) or 240
+
     -- Primary player ship explosion (epicenter)
-    spawnExplosionAt(px, py, 22, 16, 70, 240)
+    spawnExplosionAt(px, py, 14, 10, 60, 200)
 
     -- If a specific collision hit point was provided (e.g. Qix intersecting Stix away from player)
     if hx and hy then
+        hx = math.max(0, math.min(640, hx))
+        hy = math.max(0, math.min(480, hy))
         local distSq = (hx - px) * (hx - px) + (hy - py) * (hy - py)
         if distSq > 100 then
-            spawnExplosionAt(hx, hy, 14, 10, 50, 180)
+            spawnExplosionAt(hx, hy, 10, 8, 50, 160)
         end
     end
 
@@ -176,26 +182,32 @@ function Particles.spawnDeathBurst(px, py, hx, hy, stixPath, offsetX, offsetY, s
         local oy = offsetY or 0
         local sx = scaleX or 1
         local sy = scaleY or 1
-        local step = math.max(1, math.floor(#stixPath / 14))
+        local step = math.max(1, math.floor(#stixPath / 12))
+        local count = 0
+        local maxSparks = 14
         for i = 1, #stixPath, step do
             local pt = stixPath[i]
-            local nx = ox + pt.x * sx
-            local ny = oy + pt.y * sy
-            local p = allocParticle()
-            p.active = true
-            p.x = nx
-            p.y = ny
-            local angle = love.math.random() * math.pi * 2
-            local speed = love.math.random(25, 90)
-            p.vx = math.cos(angle) * speed
-            p.vy = math.sin(angle) * speed
-            p.life = love.math.random(0.25, 0.55)
-            p.maxLife = p.life
-            p.size = love.math.random(2.2, 4.2)
-            p.shape = (love.math.random() > 0.5) and 1 or 2
-            p.rot = love.math.random() * math.pi * 2
-            p.vRot = (love.math.random() - 0.5) * 12
-            p.r, p.g, p.b = pickExplosionColor()
+            if pt and pt.x and pt.y then
+                local nx = math.max(0, math.min(640, ox + pt.x * sx))
+                local ny = math.max(0, math.min(480, oy + pt.y * sy))
+                local p = allocParticle()
+                p.active = true
+                p.x = nx
+                p.y = ny
+                local angle = love.math.random() * math.pi * 2
+                local speed = love.math.random(25, 80)
+                p.vx = math.cos(angle) * speed
+                p.vy = math.sin(angle) * speed
+                p.life = love.math.random(0.25, 0.50)
+                p.maxLife = p.life
+                p.size = love.math.random(2.0, 3.8)
+                p.shape = (love.math.random() > 0.5) and 1 or 2
+                p.rot = love.math.random() * math.pi * 2
+                p.vRot = (love.math.random() - 0.5) * 12
+                p.r, p.g, p.b = pickExplosionColor()
+                count = count + 1
+                if count >= maxSparks then break end
+            end
         end
     end
 end
@@ -223,8 +235,6 @@ function Particles.update(dt)
     end
 end
 
-local SHARD_DIAMOND = {0, 0, 0, 0, 0, 0, 0, 0}
-
 function Particles.draw()
     love.graphics.setBlendMode("add")
 
@@ -232,23 +242,28 @@ function Particles.draw()
         local p = pool[i]
         if p.active then
             local alpha = math.max(0, p.life / p.maxLife)
-            love.graphics.setColor(p.r, p.g, p.b, alpha)
+            if alpha > 0.02 then
+                love.graphics.setColor(p.r, p.g, p.b, alpha)
 
-            if p.shape == 1 then
-                -- Glowing spark point / circle
-                love.graphics.circle("fill", p.x, p.y, p.size * (0.6 + 0.4 * alpha))
-            elseif p.shape == 2 then
-                -- Tumbling vector diamond shard
-                local s = p.size * alpha
-                love.graphics.push()
-                love.graphics.translate(p.x, p.y)
-                love.graphics.rotate(p.rot)
-                SHARD_DIAMOND[1] = 0;   SHARD_DIAMOND[2] = -s
-                SHARD_DIAMOND[3] = s;   SHARD_DIAMOND[4] = 0
-                SHARD_DIAMOND[5] = 0;   SHARD_DIAMOND[6] = s
-                SHARD_DIAMOND[7] = -s;  SHARD_DIAMOND[8] = 0
-                love.graphics.polygon("fill", SHARD_DIAMOND)
-                love.graphics.pop()
+                if p.shape == 1 then
+                    -- Glowing spark point / circle (8 segments instead of default 30+ for GLES efficiency)
+                    local rad = p.size * (0.6 + 0.4 * alpha)
+                    if rad >= 0.5 then
+                        love.graphics.circle("fill", p.x, p.y, rad, 8)
+                    end
+                elseif p.shape == 2 then
+                    -- Tumbling vector diamond shard:
+                    -- Rendered safely as a rotated hardware quad without EarCut polygon triangulation!
+                    local s = p.size * alpha
+                    if s >= 0.6 then
+                        local half = s * 0.707
+                        love.graphics.push()
+                        love.graphics.translate(p.x, p.y)
+                        love.graphics.rotate(p.rot)
+                        love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
+                        love.graphics.pop()
+                    end
+                end
             end
         end
     end

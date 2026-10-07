@@ -79,6 +79,54 @@ This document records the critical lessons, failure modes, and hardware-level so
 * **The Solution**:
   * Handle crash capture at the OS / shell level in `Qix.sh`:
     1. **Enable fatal signal output**: `sysctl -w kernel.print-fatal-signals=1` (forces the kernel to print the faulting library, IP, SP, and signal reason into `dmesg`).
-    2. **Enable core dumps**: `sysctl -w kernel.core_pattern="$GAMEDIR/core"` and `ulimit -c unlimited`.
+    2. **Enable core dumps in tmpfs**: `sysctl -w kernel.core_pattern="/tmp/core"` and `ulimit -c unlimited`. Direct dumps to `/tmp` (RAM-backed tmpfs) because exFAT/FAT32 MicroSD cards truncate core dumps to 0 bytes.
     3. **Isolate run-time kernel logs**: Record `DMESG_LINES_BEFORE=$(dmesg | wc -l)` before starting the game. On exit with non-zero status, print only `dmesg | tail -n +$((DMESG_LINES_BEFORE + 1))` to avoid boot spam.
     4. **In-game Breadcrumbs**: Maintain a lightweight in-memory ring buffer (`Logger.breadcrumb(...)`) tracking the last 60 engine actions (states, entity updates, draw frames) to trace the exact line of execution preceding any native fault.
+
+---
+
+## 7. Dynamic Particle Geometry & EarCut Polygon Traps
+
+### Never Use `love.graphics.polygon("fill")` for Decaying Particle FX
+* **The Problem**: When particles decay over their lifetime, their calculated size $s = \text{size} \times \alpha$ eventually approaches $0.0$. If a diamond or shard is drawn using `love.graphics.polygon("fill", {0, -s, s, 0, 0, s, -s, 0})`, all four vertices collapse into $(0,0)$. Love2D's internal polygon triangulator (EarCut / Libtess2) filters out duplicate and collinear vertices. When all vertices are filtered, the polygon linked list becomes empty (`NULL`). The triangulator then attempts to dereference the head pointer (`x0 = 0x0000000000000000`), immediately producing a native kernel **SIGSEGV 11** crash (`Exit Code 139`).
+* **The Solution**:
+  1. **Render Shards as Rotated Hardware Quads**: A diamond is simply a square rotated by $45^\circ$. Use:
+     ```lua
+     if s >= 0.6 then
+         local half = s * 0.707
+         love.graphics.push()
+         love.graphics.translate(p.x, p.y)
+         love.graphics.rotate(p.rot)
+         love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
+         love.graphics.pop()
+     end
+     ```
+     This completely bypasses polygon triangulation, utilizes native GPU quad batching, and is impossible to crash with degenerate geometry.
+  2. **Enforce Minimum Size Thresholds**: Always guard particle rendering with `if s >= 0.6` and `if alpha > 0.02`. Never draw sub-pixel zero-area geometry.
+  3. **Explicit Circle Segments**: Never call `love.graphics.circle("fill", x, y, r)` with default segment counts (30–36 vertices) for dozens of tiny 2–3px sparks. Explicitly pass 8 segments: `love.graphics.circle("fill", x, y, r, 8)`. This cuts vertex count and GLES clipping load on Mali-G31 by over 75%.
+
+---
+
+## 8. OpenAL-Soft Audio & ALSA Concurrency on RK3326
+
+### Multi-Threaded Audio Source Stopping & Race Conditions
+* **The Problem**: In Linux ALSA on RK3326, iterating through audio sources and calling `s:stop()` multiple times (or calling `s:stop()` on a looping source that was already stopped in the same tick) causes race conditions between Lua main thread calls and the ALSA mixer background thread. This results in OpenAL dereferencing a detached voice/buffer (`SIGSEGV 11`).
+* **The Solution**:
+  1. **Atomic Global Audio Stop**: Use `love.audio.stop()` to atomically stop all playing sources across the engine instead of looping through tables calling `:stop()` on individual sources.
+  2. **Check Playing State**: Before calling `s:stop()` on individual named sources, always check `if s:isPlaying() then s:stop() end`.
+  3. **Defensive `pcall`**: Wrap audio start/stop calls in `pcall` so transient ALSA buffer underruns never take down the game process.
+
+---
+
+## 9. Entity Collision & State Re-entrancy
+
+### Same-Frame Collision Stacking
+* **The Problem**: If a player is drawing a line and collides with Qix, `game:onPlayerDeath("qix")` changes state to `DEAD`. If the subsequent loop over Sparx enemies executes in the exact same frame without checking the new state, Sparx can also collide with the player Marker at the same position, invoking `onPlayerDeath("sparx")` re-entrantly. This deducts a second life, triggers duplicate audio stops, and corrupts particle pools.
+* **The Solution**:
+  1. **Re-entrancy Guard**: At the top of `onPlayerDeath`:
+     ```lua
+     if self.state == "DEAD" or self.state == "GAME_OVER" or self.player.state == Player.STATE_DEAD then
+         return
+     end
+     ```
+  2. **Loop Guard**: Check `if game.state == "PLAYING"` before every subsequent enemy collision loop in `love.update`.
