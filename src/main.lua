@@ -241,6 +241,35 @@ function love.load()
     for y = 0, 480, 32 do love.graphics.line(0, y, 640, y) end
     love.graphics.setCanvas()
 
+    -- Initialize State Machine & Discrete Scene Modules (Pillar 2: Architecture Decoupling)
+    local StateMachine = require("state_machine")
+    local StateTitle = require("states.state_title")
+    local StatePlaying = require("states.state_playing")
+    local StateDead = require("states.state_dead")
+    local StateLevelClear = require("states.state_level_clear")
+    local StateGameOver = require("states.state_game_over")
+    local StateHowTo = require("states.state_how_to")
+    local StateBadges = require("states.state_badges")
+    local StatePause = require("states.state_pause")
+
+    game.DIFFICULTY_CONFIGS = DIFFICULTY_CONFIGS
+    game.DIFFICULTY_ORDER = DIFFICULTY_ORDER
+    game.BorderFX = BorderFX
+    game.Particles = Particles
+    game.AmbientShips = AmbientShips
+
+    game.stateMachine = StateMachine.new({
+        TITLE = StateTitle.new(game),
+        PLAYING = StatePlaying.new(game),
+        DEAD = StateDead.new(game),
+        LEVEL_CLEAR = StateLevelClear.new(game),
+        GAME_OVER = StateGameOver.new(game),
+        HOW_TO = StateHowTo.new(game),
+        BADGES = StateBadges.new(game),
+        PAUSED = StatePause.new(game)
+    })
+    game.stateMachine:change(game.state or "TITLE")
+
     if os.getenv("QIX_TEST_QUIT") then
         Logger.info("TEST", "QIX_TEST_QUIT flag detected. Initialization succeeded cleanly! Exiting test.")
         love.event.quit(0)
@@ -445,7 +474,9 @@ function game:setState(newState, triggerReason)
     Logger.breadcrumb("STATE", "%s -> %s (%s)", tostring(oldState), tostring(newState), tostring(triggerReason or "unspecified"))
     self.state = newState
 
-    if newState == "TITLE" then
+    if self.stateMachine then
+        self.stateMachine:change(newState, triggerReason)
+    elseif newState == "TITLE" then
         self.titleCooldown = 0.40 -- Prevent accidental double-tap button bleed from GAME_OVER or PAUSE
         self.titleBlink = 0
         if self.titleGrid then
@@ -806,188 +837,25 @@ function love.update(dt)
         end
     end
 
-    if game.state == "TITLE" then
-        game.titleBlink = game.titleBlink + dt * 4
-        if game.titleAttractQix then
-            game.titleAttractQix:update(dt)
-        end
+    if game.stateMachine then
+        game.stateMachine:update(dt)
+    end
 
-    elseif game.state == "HOW_TO" then
-        game.titleBlink = game.titleBlink + dt * 4
-        if game.titleAttractQix then
-            game.titleAttractQix:update(dt)
-        end
-        -- Smooth vertical scrolling with D-Pad or Left Stick
-        local scrollSpeed = 260
-        local scrollDelta = 0
-        if love.keyboard.isDown("up", "w") then
-            scrollDelta = scrollDelta - scrollSpeed * dt
-        elseif love.keyboard.isDown("down", "s") then
-            scrollDelta = scrollDelta + scrollSpeed * dt
-        end
-        local joysticks = love.joystick.getJoysticks()
-        for _, joy in ipairs(joysticks) do
-            if joy:isGamepad() then
-                if joy:isGamepadDown("dpup") then
-                    scrollDelta = scrollDelta - scrollSpeed * dt
-                elseif joy:isGamepadDown("dpdown") then
-                    scrollDelta = scrollDelta + scrollSpeed * dt
-                end
-                local ly = joy:getGamepadAxis("lefty")
-                if ly and math.abs(ly) > 0.3 then
-                    scrollDelta = scrollDelta + ly * scrollSpeed * dt
-                end
-            end
-        end
-        if scrollDelta ~= 0 then
-            game.howToScrollY = math.max(0, math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + scrollDelta))
-        end
-
-    elseif game.state == "PLAYING" then
-        game.timeInLevel = game.timeInLevel + dt
-
-        if game.freezeTimer > 0 then
-            game.freezeTimer = game.freezeTimer - dt
-        end
-        Crystals.updateList(game.crystals, dt)
-
-        -- Mutate Sparx to Super Sparx when level timer runs out (Later levels: Level 2+)
-        if game.superSparxEnabled and game.timeInLevel >= game.sparxTimer then
-            local justMutated = false
-            for _, spx in ipairs(game.sparxList) do
-                if not spx.isSuper then
-                    spx:mutateToSuper()
-                    justMutated = true
-                end
-            end
-            if justMutated and not game.superSparxAlerted then
-                game.superSparxAlerted = true
-                Audio.play("death")
-                game.bannerText = "⚡ WARNING: SUPER SPARX UNLEASHED! ⚡"
-                game.bannerTimer = 2.5
-            end
-        end
-
-        -- Update Player
-        game.player:update(dt, game.input, game.qixList,
-            function(res) game:onAreaCaptured(res) end,
-            function(reason) game:onPlayerDeath(reason) end,
-            game.offsetX, game.offsetY, game.scaleX, game.scaleY
-        )
-
-        -- Update Qix entities and Sparx enemies (frozen while Chrono Freeze is active)
-        if game.freezeTimer <= 0 and game.state == "PLAYING" then
-            for _, qix in ipairs(game.qixList) do
-                qix:update(dt)
-                -- Check collision with player's active stix line
-                local hit, hx, hy = qix:checkStixCollision(game.player.stixPath)
-                if game.player:isDrawing() and hit then
-                    game:onPlayerDeath("qix", hx, hy)
-                    break
-                end
-            end
-
-            if game.state == "PLAYING" then
-                for _, spx in ipairs(game.sparxList) do
-                    spx:update(dt, game.player)
-                    if spx:checkPlayerCollision(game.player) then
-                        game:onPlayerDeath("sparx", spx.x, spx.y)
-                        break
-                    end
-                end
-            end
-        end
-
-    elseif game.state == "DEAD" then
-        game.deathTimer = game.deathTimer - dt
-        if game.deathTimer <= 0 then
-            if game.lives > 0 then
-                local cfg = DIFFICULTY_CONFIGS[game.difficulty] or DIFFICULTY_CONFIGS.ARCADE
-                game.player:respawn()
-                game.player:applyDifficulty(cfg)
-                -- Reset Sparx to opposite top corners so player has safe breathing room
-                game.sparxList = {
-                    Sparx.new(game.grid, 0, 0, true, false, cfg.speedMult),
-                    Sparx.new(game.grid, game.grid.width - 1, 0, false, false, cfg.speedMult)
-                }
-                game.bannerText = "⚡ SAFE SHIELD ACTIVE ⚡"
-                game.bannerTimer = 1.8
-                game:setState("PLAYING", "respawn")
-            else
-                if game.score > (game.sessionInitialHighScore or 0) and game.score > 0 then
-                    game.isNewRecord = true
-                    Audio.play("fanfare")
-                else
-                    game.isNewRecord = false
-                end
-                game:saveHighScore()
-                game:setState("GAME_OVER", "lives_depleted")
-                game.gameOverAnim = {
-                    timer = 0,
-                    cardY = 160,
-                    targetCardY = 22,
-                    displayScore = 0,
-                    tallySpeed = math.max(120, math.floor(game.score / 1.0)),
-                    tallyDone = (game.score == 0),
-                    rankRevealed = (game.score == 0),
-                    inputLockout = 0.5,
-                    selectedButton = 1,
-                    sparkTimer = 0,
-                    shimmer = 0
-                }
-                Logger.info("GAME", "Game Over! Score: %d | Level: %d | Cuts: %d | New Record: %s",
-                    game.score, game.level, game.totalCuts or 0, tostring(game.isNewRecord))
-                Logger.breadcrumb("GAME", "Game Over initialized. DisplayScore=0 TargetScore=%d", game.score)
-            end
-        end
-
-    elseif game.state == "LEVEL_CLEAR" then
-        if game.clearPhase == "SCORES" then
-            game.clearTimer = game.clearTimer - dt
-            if game.clearTimer <= 0 then
-                game.clearPhase = "SHOWCASE"
-            end
-        end
-        -- In SHOWCASE mode: holds indefinitely so user can admire the art until pressing A
-
-    elseif game.state == "GAME_OVER" then
-        if game.gameOverAnim then
-            local anim = game.gameOverAnim
-            anim.timer = anim.timer + dt
-            anim.shimmer = (anim.shimmer + dt * 2.5) % 6.28
-            if anim.inputLockout > 0 then
-                anim.inputLockout = anim.inputLockout - dt
-            end
-
-            -- Smooth spring slide-up
-            anim.cardY = anim.cardY + (anim.targetCardY - anim.cardY) * math.min(1, dt * 8)
-
-            -- Rolling score count-up
-            if not anim.tallyDone then
-                anim.displayScore = math.min(game.score, anim.displayScore + math.ceil(anim.tallySpeed * dt))
-                if anim.displayScore >= game.score then
-                    anim.displayScore = game.score
-                    anim.tallyDone = true
-                    if not anim.rankRevealed then
-                        anim.rankRevealed = true
-                        Audio.play("bonus")
-                        local rx = 50 + 330 + 90
-                        local ry = anim.cardY + 48 + 47
-                        Particles.spawnCaptureBurst(rx, ry, true, 20)
-                    end
-                end
-            end
-
-            -- Periodic celebratory confetti sparks if new all-time record
-            if game.isNewRecord then
-                anim.sparkTimer = anim.sparkTimer + dt
-                if anim.sparkTimer >= 0.15 then
-                    anim.sparkTimer = 0
-                    local sx = love.math.random(60, 580)
-                    local sy = love.math.random(30, 440)
-                    Particles.spawnCutSpark(sx, sy, love.math.random(-1, 1), love.math.random(-1, 1), love.math.random() > 0.5)
-                end
-            end
+    -- Automated Multi-Frame Simulation Mode (for CI/Verification)
+    if os.getenv("QIX_SIMULATE_FRAMES") then
+        game.simulatedFrames = (game.simulatedFrames or 0) + 1
+        local maxF = tonumber(os.getenv("QIX_SIMULATE_FRAMES")) or 80
+        if game.simulatedFrames == 5 then
+            game:startNewGame()
+        elseif game.simulatedFrames == 20 then
+            love.keypressed("f1") -- jump to Level 4
+        elseif game.simulatedFrames == 35 then
+            love.keypressed("f4") -- toggle debug HUD
+        elseif game.simulatedFrames == 50 then
+            love.keypressed("f2") -- trigger player death
+        elseif game.simulatedFrames >= maxF then
+            Logger.info("TEST", "QIX_SIMULATE_FRAMES complete (%d frames simulated). Exiting test cleanly.", game.simulatedFrames)
+            love.event.quit(0)
         end
     end
 end
@@ -1165,113 +1033,8 @@ function game:executeTitleOption()
 end
 
 function love.gamepadpressed(joystick, button)
-    -- Global Start Button: Opens Pause menu when PLAYING (never closes menu on Start)
-    if button == "start" then
-        if game.state == "PLAYING" then
-            game:setState("PAUSED", "gamepad_start_pause")
-            game.pauseIndex = 1
-            game.pauseOpenedAt = love.timer.getTime()
-            Audio.stopAll()
-            return
-        end
-    end
-
-    if game.state == "PLAYING" then
-        if button == "back" then
-            Audio.toggleMute()
-        end
-    elseif game.state == "PAUSED" then
-        local now = love.timer.getTime()
-        if (now - (game.pauseOpenedAt or 0)) < 0.15 then
-            return
-        end
-        if button == "dpup" then
-            game:navMenu("up")
-        elseif button == "dpdown" then
-            game:navMenu("down")
-        elseif button == "dpleft" then
-            game:navMenu("left")
-        elseif button == "dpright" then
-            game:navMenu("right")
-        elseif button == "a" then
-            game:executePauseOption()
-        elseif button == "b" or button == "back" then
-            game:setState("PLAYING", "gamepad_pause_back")
-            Audio.play("tick")
-        end
-    elseif game.state == "TITLE" then
-        if (game.titleCooldown or 0) > 0 then
-            return
-        end
-        if button == "dpup" then
-            game:navMenu("up")
-        elseif button == "dpdown" then
-            game:navMenu("down")
-        elseif button == "dpleft" then
-            game:navMenu("left")
-        elseif button == "dpright" then
-            game:navMenu("right")
-        elseif button == "a" or button == "start" then
-            game:executeTitleOption()
-        end
-    elseif game.state == "BADGES" then
-        if button == "dpup" then
-            game:navMenu("up")
-        elseif button == "dpdown" then
-            game:navMenu("down")
-        elseif button == "a" or button == "b" or button == "start" or button == "back" then
-            game:setState("TITLE", "gamepad_badges_back")
-            Audio.play("tick")
-        end
-    elseif game.state == "HOW_TO" then
-        if button == "dpup" then
-            game.howToScrollY = math.max(0, (game.howToScrollY or 0) - 50)
-            Audio.play("tick")
-        elseif button == "dpdown" then
-            game.howToScrollY = math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + 50)
-            Audio.play("tick")
-        elseif button == "dpleft" or button == "leftshoulder" then
-            game.howToPage = math.max(1, (game.howToPage or 1) - 1)
-            game.howToScrollY = 0
-            Audio.play("tick")
-        elseif button == "dpright" or button == "rightshoulder" then
-            game.howToPage = math.min(2, (game.howToPage or 1) + 1)
-            game.howToScrollY = 0
-            Audio.play("tick")
-        elseif button == "a" or button == "b" or button == "start" or button == "back" then
-            game:setState("TITLE", "gamepad_howto_back")
-            Audio.play("tick")
-        end
-    elseif game.state == "GAME_OVER" then
-        if game.gameOverAnim and game.gameOverAnim.inputLockout and game.gameOverAnim.inputLockout > 0 then
-            return
-        end
-        if button == "dpleft" or button == "dpup" then
-            if game.gameOverAnim then game.gameOverAnim.selectedButton = 1 end
-            Audio.play("tick")
-        elseif button == "dpright" or button == "dpdown" then
-            if game.gameOverAnim then game.gameOverAnim.selectedButton = 2 end
-            Audio.play("tick")
-        elseif button == "a" or button == "start" then
-            if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
-                Audio.play("tick")
-                game:setState("TITLE", "gamepad_gameover_quit")
-            else
-                Audio.play("start")
-                game:startNewGame()
-            end
-        elseif button == "b" or button == "back" then
-            Audio.play("tick")
-            game:setState("TITLE", "gamepad_gameover_back")
-        end
-    elseif game.state == "LEVEL_CLEAR" then
-        if button == "a" or button == "start" then
-            if game.clearPhase == "SCORES" then
-                game.clearPhase = "SHOWCASE"
-            elseif game.clearPhase == "SHOWCASE" then
-                game:startLevel(game.level + 1)
-            end
-        end
+    if game.stateMachine and game.stateMachine:gamepadpressed(joystick, button) then
+        return
     end
 end
 
@@ -1317,120 +1080,39 @@ function love.mousepressed(x, y, button)
 end
 
 function love.keypressed(key)
-    -- Global pause: Open pause on Escape or P when PLAYING (never closes on P/Start)
-    if key == "escape" or key == "p" then
-        if game.state == "PLAYING" then
-            game:setState("PAUSED", "keyboard_pause")
-            game.pauseIndex = 1
-            game.pauseOpenedAt = love.timer.getTime()
-            Audio.stopAll()
-            return
+    -- Fast-Forward Desktop Debug Keys (Pillar 3: Instant state reachability)
+    if key == "f1" then
+        game:startLevel(4)
+        Logger.info("DEBUG", "Debug F1: Jumped directly to Level 4!")
+        return
+    elseif key == "f2" then
+        if game.state == "PLAYING" and game.player then
+            game:onPlayerDeath("debug_test", game.player.x, game.player.y)
+            Logger.info("DEBUG", "Debug F2: Triggered test player death!")
         end
+        return
+    elseif key == "f3" then
+        if game.state == "PLAYING" then
+            game:onAreaCaptured({
+                capturedCells = 1000,
+                percent = game.targetPercent or 75,
+                cutPercent = 35,
+                isSlow = true,
+                cx = 200,
+                cy = 200,
+                isSplitQix = false
+            })
+            Logger.info("DEBUG", "Debug F3: Triggered test level clear!")
+        end
+        return
+    elseif key == "f4" then
+        game.showDebugHUD = not game.showDebugHUD
+        Logger.info("DEBUG", "Debug F4: Toggled debug HUD display: %s", tostring(game.showDebugHUD))
+        return
     end
 
-    if game.state == "LEVEL_CLEAR" then
-        if key == "a" or key == "return" or key == "space" then
-            if game.clearPhase == "SCORES" then
-                game.clearPhase = "SHOWCASE"
-            elseif game.clearPhase == "SHOWCASE" then
-                game:startLevel(game.level + 1)
-            end
-        end
-    elseif game.state == "TITLE" then
-        if (game.titleCooldown or 0) > 0 then
-            return
-        end
-        if key == "up" or key == "w" then
-            game:navMenu("up")
-        elseif key == "down" or key == "s" then
-            game:navMenu("down")
-        elseif key == "left" or key == "a" then
-            game:navMenu("left")
-        elseif key == "right" or key == "d" then
-            game:navMenu("right")
-        elseif key == "return" or key == "space" or key == "z" or key == "j" then
-            game:executeTitleOption()
-        elseif key == "escape" then
-            if game.titleIndex == #game.titleItems then
-                Logger.info("SYSTEM", "User confirmed QUIT from Title menu via Escape.")
-                love.event.quit()
-            else
-                -- Focus QUIT button first rather than immediate hard exit
-                game.titleIndex = #game.titleItems
-                Audio.play("tick")
-            end
-        end
-    elseif game.state == "BADGES" then
-        if key == "up" or key == "w" then
-            game:navMenu("up")
-        elseif key == "down" or key == "s" then
-            game:navMenu("down")
-        elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
-            game:setState("TITLE", "keyboard_badges_back")
-            Audio.play("tick")
-        end
-    elseif game.state == "HOW_TO" then
-        if key == "up" or key == "w" then
-            game.howToScrollY = math.max(0, (game.howToScrollY or 0) - 50)
-            Audio.play("tick")
-        elseif key == "down" or key == "s" then
-            game.howToScrollY = math.min(game.howToMaxScroll or 120, (game.howToScrollY or 0) + 50)
-            Audio.play("tick")
-        elseif key == "left" or key == "a" then
-            game.howToPage = math.max(1, (game.howToPage or 1) - 1)
-            game.howToScrollY = 0
-            Audio.play("tick")
-        elseif key == "right" or key == "d" then
-            game.howToPage = math.min(2, (game.howToPage or 1) + 1)
-            game.howToScrollY = 0
-            Audio.play("tick")
-        elseif key == "escape" or key == "return" or key == "space" or key == "b" or key == "x" or key == "k" then
-            game:setState("TITLE", "keyboard_howto_back")
-            Audio.play("tick")
-        end
-    elseif game.state == "GAME_OVER" then
-        if game.gameOverAnim and game.gameOverAnim.inputLockout and game.gameOverAnim.inputLockout > 0 then
-            return
-        end
-        if key == "left" or key == "up" or key == "w" then
-            if game.gameOverAnim then game.gameOverAnim.selectedButton = 1 end
-            Audio.play("tick")
-        elseif key == "right" or key == "down" or key == "s" then
-            if game.gameOverAnim then game.gameOverAnim.selectedButton = 2 end
-            Audio.play("tick")
-        elseif key == "return" or key == "space" or key == "z" or key == "j" then
-            if game.gameOverAnim and game.gameOverAnim.selectedButton == 2 then
-                Audio.play("tick")
-                game:setState("TITLE", "keyboard_gameover_quit")
-            else
-                Audio.play("start")
-                game:startNewGame()
-            end
-        elseif key == "escape" or key == "b" or key == "x" then
-            Audio.play("tick")
-            game:setState("TITLE", "keyboard_gameover_back")
-        end
-    elseif game.state == "PAUSED" then
-        local now = love.timer.getTime()
-        if (now - (game.pauseOpenedAt or 0)) < 0.15 then
-            return
-        end
-        if key == "up" or key == "w" then
-            game:navMenu("up")
-        elseif key == "down" or key == "s" then
-            game:navMenu("down")
-        elseif key == "left" or key == "a" then
-            game:navMenu("left")
-        elseif key == "right" or key == "d" then
-            game:navMenu("right")
-        elseif key == "return" or key == "space" or key == "z" then
-            game:executePauseOption()
-        elseif key == "b" or key == "escape" or key == "backspace" then
-            game:setState("PLAYING", "keyboard_pause_resume")
-            Audio.play("tick")
-        end
-    elseif key == "m" then
-        Audio.toggleMute()
+    if game.stateMachine and game.stateMachine:keypressed(key) then
+        return
     end
 end
 
@@ -1455,102 +1137,8 @@ function love.draw()
         love.graphics.translate(ox, oy)
     end
 
-    if game.state == "TITLE" then
-        game:drawTitle()
-    elseif game.state == "HOW_TO" then
-        game:drawHowTo()
-    elseif game.state == "BADGES" then
-        game:drawBadgesGallery()
-    elseif game.state == "LEVEL_CLEAR" then
-        -- During Level Clear: Unveil 100% full artwork unobstructed in FIT mode!
-        game:drawLevelClear()
-    elseif game.state == "GAME_OVER" then
-        -- During Game Over: Draw grid underneath cleanly and debriefing card
-        if game.grid then
-            game.grid:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-        end
-        game:drawGameOver()
-    else
-        -- Draw Top Arcade HUD Bar
-        game:drawHUD()
-
-        -- Draw Playfield Grid (uncovering background image)
-        game.grid:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-
-        -- Draw High-Energy Neon Shimmer Border Loader (Dual corner beams, glint sweep & neon aura)
-        local boardW = game.grid.width * game.scaleX
-        local boardH = game.grid.height * game.scaleY
-        BorderFX.draw(game.offsetX, game.offsetY, boardW, boardH)
-
-        -- Draw Floating Power Crystals (Level 4+)
-        if #game.crystals > 0 then
-            Crystals.drawList(game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-        end
-
-        -- Active Chrono Freeze Visual Overlay
-        if game.freezeTimer > 0 then
-            local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 8)
-            love.graphics.setColor(0.1, 0.85, 1.0, 0.10 + 0.08 * pulse)
-            love.graphics.rectangle("fill", game.offsetX, game.offsetY, game.grid.width * game.scaleX, game.grid.height * game.scaleY)
-            love.graphics.setColor(0.2, 0.95, 1.0, 0.9)
-            love.graphics.setFont(game.fontSmall)
-            love.graphics.print(string.format("❄ FREEZE TIME: %0.1fs", game.freezeTimer), game.offsetX + 8, game.offsetY + 8)
-        end
-
-        -- Draw Qix Entities
-        for _, qix in ipairs(game.qixList) do
-            qix:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-        end
-
-        -- Draw Sparx Enemies
-        for _, spx in ipairs(game.sparxList) do
-            spx:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-        end
-
-        -- Draw Player Marker
-        game.player:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
-
-        -- Draw Visual FX Particles (Plasma cutting sparks, capture bursts, death shards)
-        pcall(Particles.draw)
-
-        -- Draw Ambient Flyby Spaceships (diagonal visual crossing with neon trail light)
-        pcall(AmbientShips.draw)
-
-        -- Draw Floating Score Popups (set font once)
-        if #game.floatingScores > 0 then
-            love.graphics.setFont(game.fontSmall)
-            for _, fs in ipairs(game.floatingScores) do
-                local alpha = math.max(0, fs.life / fs.maxLife)
-                love.graphics.setColor(fs.color[1], fs.color[2], fs.color[3], alpha)
-                love.graphics.print(fs.text, fs.x - 16, fs.y)
-            end
-        end
-
-        -- Draw Active Banner Alert (Large, prominent announcement font for handheld screen)
-        if game.bannerTimer > 0 and game.bannerText then
-            local alpha = math.min(1, game.bannerTimer * 2.5)
-            local pulse = 0.85 + 0.15 * math.sin(love.timer.getTime() * 10)
-            local bx, by, bw, bh = 24, 34, 592, 42
-            -- Translucent dark glass backdrop
-            love.graphics.setColor(0.03, 0.05, 0.09, 0.94 * alpha)
-            love.graphics.rectangle("fill", bx, by, bw, bh, 6, 6)
-            -- Glowing neon border
-            love.graphics.setLineWidth(2)
-            love.graphics.setColor(0.0, 0.95, 1.0, alpha * pulse)
-            love.graphics.rectangle("line", bx, by, bw, bh, 6, 6)
-            -- Text shadow
-            love.graphics.setFont(game.fontMid)
-            love.graphics.setColor(0, 0, 0, 0.85 * alpha)
-            love.graphics.printf(game.bannerText, bx + 2, by + 12, bw, "center")
-            -- Vibrant announcement text
-            love.graphics.setColor(1.0, 0.88, 0.15, alpha)
-            love.graphics.printf(game.bannerText, bx, by + 10, bw, "center")
-        end
-
-        -- Overlay States
-        if game.state == "PAUSED" then
-            game:drawPauseMenu()
-        end
+    if game.stateMachine then
+        game.stateMachine:draw()
     end
 
     -- Persistent Achievement Unlock Notifications
@@ -1665,6 +1253,22 @@ function game:drawHUD()
     -- Level Indicator
     love.graphics.setColor(0.2, 1.0, 0.4, 1)
     love.graphics.print("L" .. self.level, 615, 8)
+
+    -- Debug Telemetry HUD (Toggled via F4)
+    if self.showDebugHUD then
+        local fps = love.timer and love.timer.getFPS() or 0
+        local memMb = collectgarbage("count") / 1024
+        local stixCount = (self.player and self.player.stixPath) and #self.player.stixPath or 0
+        local qixCount = self.qixList and #self.qixList or 0
+        local spxCount = self.sparxList and #self.sparxList or 0
+        local dbgText = string.format("FPS:%d | MEM:%.1fM | ST:%s | STIX:%d | QIX:%d | SPX:%d [F1:Lvl4 F2:Die F3:Win]",
+            fps, memMb, self.state, stixCount, qixCount, spxCount)
+
+        love.graphics.setColor(0, 0, 0, 0.85)
+        love.graphics.rectangle("fill", 0, game.hudHeight + 1, 640, 16)
+        love.graphics.setColor(0.2, 1.0, 0.5, 1)
+        love.graphics.print(dbgText, 8, game.hudHeight + 4)
+    end
 end
 
 function game:drawTitle()
