@@ -130,3 +130,49 @@ This document records the critical lessons, failure modes, and hardware-level so
      end
      ```
   2. **Loop Guard**: Check `if game.state == "PLAYING"` before every subsequent enemy collision loop in `love.update`.
+
+---
+
+## 10. High-Velocity Engineering & Rapid-Iteration Architecture (10x Speedup)
+
+Embedded retro handheld development creates a notorious bottleneck: code runs smoothly on modern desktop OSs (Metal/OpenGL, gigabytes of RAM, multi-channel sound), but crashes natively on target hardware. Manually ejecting SD cards, booting the console, and playing several minutes to reproduce bugs inflates iteration time to 15–20 minutes per cycle.
+
+### A. Headless Simulation & Stress-Test Harness (`tools/simulate.lua`)
+* **Principle**: Catch 95% of native crashes, memory over-allocations, and geometry faults on the desktop in **under 2 seconds** before writing to an SD card.
+* **Standard Test Suites**:
+  1. **Geometry & Particle Stressor**: Simulates 500 consecutive death bursts with edge-case inputs ($s = 0$, $\alpha = 0$, negative coords, offscreen bounds). Verifies that no polygon or line call invokes EarCut with degenerate geometry.
+  2. **Audio Concurrency Stressor**: Rapidly fires interleaved `:play()`, `:stop()`, looping sound toggles, and global stops across 1,000 cycles to catch OpenAL driver race conditions.
+  3. **Asset Batch Validator**: Iterates through all project image files, parses binary headers, and asserts resolution $\le 1280\times 960$ and file size $\le 6.0\text{ MB}$.
+  4. **Headless Bot Loop**: Runs 3,000 virtual frames of `update(0.016)` and `draw()` exercising all game states (`TITLE` $\to$ `PLAYING` $\to$ `DEAD` $\to$ `LEVEL_CLEAR` $\to$ `GAME_OVER`).
+
+### B. Finite State Machine (Never Write a Monolithic `main.lua`)
+* **Anti-Pattern**: Writing a single 2,000+ line `main.lua` that handles rendering, input, HUD, game over, audio, level progression, and enemy logic in giant `if/elseif` trees.
+* **Standard Architecture**:
+  * Keep `main.lua` under 250 lines as a thin bootstrap router.
+  * Deconstruct all game scenes into discrete files under `src/states/`:
+    `state_title.lua`, `state_playing.lua`, `state_dead.lua`, `state_level_clear.lua`, `state_game_over.lua`.
+  * Each state implements strict lifecycle callbacks: `enter()`, `update(dt)`, `draw()`, `leave()`.
+  * Prevents cross-state coupling, isolates bugs to 50–80 line files, and reduces AI context latency.
+
+### C. Desktop Handheld Emulation & Fast-Forward Debug Keybindings
+* **Viewport Sandbox**: Lock desktop window to an exact 4:3 640x480 resolution with virtual button prompts matching PortMaster's physical buttons.
+* **Debug Fast-Forward Keys (Desktop only)**:
+  * `F1`: Jump instantly to advanced levels (e.g. Level 4) with all mechanics active (skips 3 minutes of manual play).
+  * `F2`: Trigger immediate player damage/death with active entity paths.
+  * `F3`: Trigger immediate level clear / win condition.
+  * `F4`: Toggle god-mode / collision debug overlays.
+
+### D. Automated Pre-Flight Verification Script (`verify.sh`)
+* Single command executes:
+  1. Static syntax linting (`luacheck` / bytecode compilation).
+  2. Headless stress-test harness (`love tools/simulate.lua`).
+  3. Binary image header validation.
+  4. Packaging (`qix.love` and PortMaster `.zip`).
+* Rejects the build if any check fails, guaranteeing that broken builds never reach hardware.
+
+### E. Remote Wireless / OTG Hot-Deployment (Zero SD-Card Swapping)
+* The R36S supports USB Wi-Fi dongles and USB-OTG phone/Mac tethering. ArkOS runs an active SSH daemon by default (`ark:ark` on port 22).
+* Automate deployment via `deploy_remote.sh <R36S_IP>`:
+  * Uses `rsync` to push the `.love` bundle directly to `/roms2/ports/<game>/` over the local network in 2 seconds.
+  * Restarts the launcher process remotely via SSH and streams `log.txt` live to the host terminal.
+  * Slashes human iteration time from 15 minutes down to **15 seconds**.
