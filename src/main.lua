@@ -805,6 +805,7 @@ function game:onPlayerDeath(reason, hitGridX, hitGridY)
 end
 
 function love.update(dt)
+    Logger.setLastAction("UPDATE", "love.update (%s)", tostring(game.state))
     -- Poll gamepad / keyboard input
     game:updateInput()
     -- Update animated border line level cut progress bar
@@ -1134,6 +1135,7 @@ end
 -- RENDERING
 -- ==============================================================================
 function love.draw()
+    Logger.setLastAction("DRAW", "love.draw (%s)", tostring(game.state))
     love.graphics.setLineWidth(1)
     love.graphics.clear(0, 0, 0, 1)
 
@@ -1994,14 +1996,12 @@ function game:drawLevelClear()
         local by = 445
         local pulse = 0.8 + 0.2 * math.sin(love.timer.getTime() * 5)
 
-        -- Sleek dark backing badge
-        love.graphics.setColor(0, 0, 0, 0.65)
-        love.graphics.circle("fill", bx, by, 18)
-
-        -- Glowing neon cyan border
+        -- Sleek dark backing badge with neon cyan rim (pure filled discs, zero circle("line") polyline risk)
         love.graphics.setColor(0.0, 0.95, 1.0, 0.95 * pulse)
-        love.graphics.setLineWidth(2)
-        love.graphics.circle("line", bx, by, 18)
+        love.graphics.circle("fill", bx, by, 19)
+        love.graphics.setColor(0.02, 0.04, 0.08, 0.95)
+        love.graphics.circle("fill", bx, by, 17)
+        love.graphics.setLineWidth(1)
 
         -- "A" button text
         love.graphics.setFont(game.font)

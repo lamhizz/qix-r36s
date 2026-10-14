@@ -460,6 +460,31 @@ function Grid:isActiveBorder(x, y)
     return false
 end
 
+function Grid:findNearestActiveBorder(targetX, targetY)
+    local tx = math.floor((targetX or 0) + 0.5)
+    local ty = math.floor((targetY or 0) + 0.5)
+    if self:isActiveBorder(tx, ty) then return tx, ty end
+
+    local w = self.width
+    local h = self.height
+
+    local maxRadius = math.max(w, h)
+    for r = 1, maxRadius do
+        for dy = -r, r do
+            for dx = -r, r do
+                if math.abs(dx) == r or math.abs(dy) == r then
+                    local nx = tx + dx
+                    local ny = ty + dy
+                    if nx >= 0 and nx < w and ny >= 0 and ny < h and self:isActiveBorder(nx, ny) then
+                        return nx, ny
+                    end
+                end
+            end
+        end
+    end
+    return math.floor(w / 2), h - 1
+end
+
 function Grid:findNearestEmpty(targetX, targetY)
     local tx = math.floor(targetX)
     local ty = math.floor(targetY)
@@ -710,15 +735,18 @@ function Grid:completeStix(stixPath, isSlow, qixList)
 end
 
 function Grid:clearStix(stixPath)
+    if not stixPath then return end
     for _, pt in ipairs(stixPath) do
-        local idx = pt.y * self.width + pt.x
-        if self.cells[idx] == CELL_STIX then
-            self.cells[idx] = CELL_EMPTY
-            self:updatePixel(pt.x, pt.y, CELL_EMPTY)
+        if pt and pt.x and pt.y and self:inBounds(pt.x, pt.y) then
+            local idx = pt.y * self.width + pt.x
+            if self.cells[idx] == CELL_STIX then
+                self.cells[idx] = CELL_EMPTY
+                self:updatePixel(pt.x, pt.y, CELL_EMPTY)
+            end
         end
     end
     if self.image then
-        self.image:replacePixels(self.imageData)
+        pcall(function() self.image:replacePixels(self.imageData) end)
     end
 end
 

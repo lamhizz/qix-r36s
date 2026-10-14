@@ -84,19 +84,10 @@ function Player:respawn()
 
     self.x = math.floor(self.grid.width / 2)
     self.y = self.grid.height - 1
-    if not self.grid:isBorder(self.x, self.y) then
-        local found = false
-        for y = self.grid.height - 1, 0, -1 do
-            for x = 0, self.grid.width - 1 do
-                if self.grid:isActiveBorder(x, y) then
-                    self.x = x
-                    self.y = y
-                    found = true
-                    break
-                end
-            end
-            if found then break end
-        end
+    if not self.grid:isActiveBorder(self.x, self.y) then
+        local bx, by = self.grid:findNearestActiveBorder(self.x, self.y)
+        self.x = bx
+        self.y = by
     end
 
     self.state = STATE_BORDER
@@ -683,23 +674,22 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
     local py = offsetY + self.y * scaleY
     local size = 5.0 * scaleX
 
-    -- Respawn shield flashing & pulsing aura (safe 1px lines, clamped within viewport)
+    -- Respawn shield flashing & pulsing aura (safe filled discs, zero circle("line") polyline tessellation)
     if self:isShielded() then
         local pulse = 1.0 + 0.20 * math.sin(self.animTime * 12)
         local alpha = 0.45 + 0.35 * math.sin(self.animTime * 14)
-        local maxR = math.min(18 * pulse, math.max(4, 476 - py))
-        local innerR = math.min(14 * pulse, math.max(3, 476 - py))
+        local clampedR = math.min(18 * pulse, math.max(3, math.min(py - 28, 476 - py)))
+        local innerR = math.min(11 * pulse, math.max(2, clampedR * 0.65))
 
-        -- Soft protective aura fill
+        -- Soft outer protective aura fill
         love.graphics.setColor(0.0, 0.95, 1.0, alpha * 0.22)
-        love.graphics.circle("fill", px, py, maxR)
+        love.graphics.circle("fill", px, py, clampedR)
 
-        -- Concentric 1px safety rings (zero polyline tessellation on Mali-G31)
-        love.graphics.setLineWidth(1)
-        love.graphics.setColor(0.0, 0.95, 1.0, alpha)
-        love.graphics.circle("line", px, py, maxR)
-        love.graphics.setColor(1.0, 0.85, 0.2, alpha * 0.75)
-        love.graphics.circle("line", px, py, innerR)
+        -- Bright inner energy disc with dark core cutout for crisp halo
+        love.graphics.setColor(1.0, 0.88, 0.2, alpha * 0.50)
+        love.graphics.circle("fill", px, py, innerR)
+        love.graphics.setColor(0.02, 0.04, 0.08, 0.75)
+        love.graphics.circle("fill", px, py, innerR * 0.50)
         love.graphics.setLineWidth(1)
     end
 

@@ -151,13 +151,15 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
     if command -v gdb >/dev/null 2>&1; then
       echo "Running GDB stack trace:"
       gdb -batch -ex "bt" -ex "bt full" "$LOVE_BIN" "$CORE_FILE" 2>/dev/null || true
+    elif command -v python3 >/dev/null 2>&1 && [ -f "$GAMEDIR/analyze_core.py" ]; then
+      echo "Running Python ELF Core Dump Analyzer:"
+      python3 "$GAMEDIR/analyze_core.py" "$CORE_FILE" 2>&1 || true
+    elif command -v python >/dev/null 2>&1 && [ -f "$GAMEDIR/analyze_core.py" ]; then
+      echo "Running Python ELF Core Dump Analyzer:"
+      python "$GAMEDIR/analyze_core.py" "$CORE_FILE" 2>&1 || true
     else
-      echo "GDB not found on device. Extracting crash stack symbols from core dump:"
-      if command -v strings >/dev/null 2>&1; then
-        strings "$CORE_FILE" 2>/dev/null | grep -E "liblove|libopenal|libmali|libc\.so|libluajit|libpthread|\[string |src/" | head -n 40 || true
-      else
-        grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" "$CORE_FILE" 2>/dev/null | head -n 40 || true
-      fi
+      echo "GDB and Python not found on device. Extracting crash stack symbols from core dump:"
+      head -c 25000000 "$CORE_FILE" 2>/dev/null | grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" 2>/dev/null | head -n 40 || true
     fi
   fi
 fi

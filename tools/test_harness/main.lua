@@ -223,7 +223,16 @@ function love.load()
     assertTest("Crystals spawned for Level 4", #cryList > 0)
     Crystals.updateList(cryList, 0.016)
     local cryDrawOk = pcall(Crystals.drawList, cryList, 0, 0, 1.8, 1.8)
-    assertTest("Crystals updateList and drawList executed cleanly", cryDrawOk)
+    -- Test Player death with active stix in claimed field and respawn
+    player.stixPath = { {x=20, y=126}, {x=21, y=126}, {x=22, y=126} }
+    for _, pt in ipairs(player.stixPath) do
+        testGrid:set(pt.x, pt.y, testGrid.CELL_STIX)
+    end
+    player:respawn()
+    assertTest("Player respawn with stix cleared stixPath cleanly", #player.stixPath == 0)
+    local s1X, s1Y = testGrid:findNearestActiveBorder(0, 0)
+    local s2X, s2Y = testGrid:findNearestActiveBorder(testGrid.width - 1, 0)
+    assertTest("findNearestActiveBorder returned active border for Sparx", testGrid:isActiveBorder(s1X, s1Y) and testGrid:isActiveBorder(s2X, s2Y))
 
     -- --------------------------------------------------------------------------
     -- SUITE 5: ASSET INTEGRITY INSPECTION

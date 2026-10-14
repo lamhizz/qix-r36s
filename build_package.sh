@@ -42,6 +42,10 @@ cp "$PORT_DIR/gameinfo.xml" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PORT_DIR/qix.gptk" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PORT_DIR/cover.png" "$BUILD_DIR/$PACKAGE_NAME/"
 cp "$PORT_DIR/screenshot.png" "$BUILD_DIR/$PACKAGE_NAME/"
+if [ -f "$PORT_DIR/analyze_core.py" ]; then
+    cp "$PORT_DIR/analyze_core.py" "$BUILD_DIR/$PACKAGE_NAME/"
+    chmod +x "$BUILD_DIR/$PACKAGE_NAME/analyze_core.py"
+fi
 
 # Copy game package and loose art/fonts for easy user customization on SD card
 cp "qix.love" "$BUILD_DIR/$PACKAGE_NAME/"

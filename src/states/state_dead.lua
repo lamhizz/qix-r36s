@@ -30,10 +30,12 @@ function StateDead:update(dt)
             local cfg = game.DIFFICULTY_CONFIGS[game.difficulty] or game.DIFFICULTY_CONFIGS.ARCADE
             game.player:respawn()
             game.player:applyDifficulty(cfg)
-            -- Reset Sparx to opposite top corners so player has safe breathing room
+            -- Reset Sparx to safe active perimeter positions away from player
+            local s1X, s1Y = game.grid:findNearestActiveBorder(0, 0)
+            local s2X, s2Y = game.grid:findNearestActiveBorder(game.grid.width - 1, 0)
             game.sparxList = {
-                Sparx.new(game.grid, 0, 0, true, false, cfg.speedMult),
-                Sparx.new(game.grid, game.grid.width - 1, 0, false, false, cfg.speedMult)
+                Sparx.new(game.grid, s1X, s1Y, true, false, cfg.speedMult),
+                Sparx.new(game.grid, s2X, s2Y, false, false, cfg.speedMult)
             }
             game.bannerText = "** SAFE SHIELD ACTIVE **"
             game.bannerTimer = 1.8

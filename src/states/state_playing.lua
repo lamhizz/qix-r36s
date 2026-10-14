@@ -16,11 +16,13 @@ function StatePlaying.new(game)
     return self
 end
 
-function StatePlaying:enter()
+function StatePlaying:enter(trigger)
+    Logger.setLastAction("STATE", "StatePlaying: enter (trigger=%s)", tostring(trigger))
 end
 
 function StatePlaying:update(dt)
     local game = self.game
+    Logger.setLastAction("UPDATE", "StatePlaying: start (t=%.2f)", game.timeInLevel)
     game.timeInLevel = game.timeInLevel + dt
 
     if game.freezeTimer > 0 then
@@ -46,6 +48,7 @@ function StatePlaying:update(dt)
     end
 
     -- Update Player Marker
+    Logger.setLastAction("UPDATE", "StatePlaying: player:update (x=%d, y=%d, state=%s)", game.player.x, game.player.y, tostring(game.player.state))
     game.player:update(dt, game.input, game.qixList,
         function(res) game:onAreaCaptured(res) end,
         function(reason) game:onPlayerDeath(reason) end,
@@ -54,6 +57,7 @@ function StatePlaying:update(dt)
 
     -- Update Qix and Sparx (frozen while Chrono Freeze is active)
     if game.freezeTimer <= 0 and game.state == "PLAYING" then
+        Logger.setLastAction("UPDATE", "StatePlaying: qixList update (%d)", #game.qixList)
         for _, qix in ipairs(game.qixList) do
             qix:update(dt)
             local hit, hx, hy = qix:checkStixCollision(game.player.stixPath)
@@ -64,6 +68,7 @@ function StatePlaying:update(dt)
         end
 
         if game.state == "PLAYING" then
+            Logger.setLastAction("UPDATE", "StatePlaying: sparxList update (%d)", #game.sparxList)
             for _, spx in ipairs(game.sparxList) do
                 spx:update(dt, game.player)
                 if spx:checkPlayerCollision(game.player) then
@@ -73,26 +78,31 @@ function StatePlaying:update(dt)
             end
         end
     end
+    Logger.setLastAction("UPDATE", "StatePlaying: update done")
 end
 
 function StatePlaying:draw()
     local game = self.game
 
     -- Top Arcade HUD Bar
+    Logger.setLastAction("DRAW", "StatePlaying: drawHUD")
     pcall(game.drawHUD, game)
 
     -- Playfield Grid (reveals background photo)
     if game.grid then
+        Logger.setLastAction("DRAW", "StatePlaying: grid.draw")
         pcall(game.grid.draw, game.grid, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Neon Viewport Shimmer Border
     local boardW = game.grid.width * game.scaleX
     local boardH = game.grid.height * game.scaleY
+    Logger.setLastAction("DRAW", "StatePlaying: BorderFX.draw")
     pcall(game.BorderFX.draw, game.offsetX, game.offsetY, boardW, boardH)
 
     -- Power Crystals (Level 4+)
     if #game.crystals > 0 then
+        Logger.setLastAction("DRAW", "StatePlaying: Crystals.drawList (%d)", #game.crystals)
         pcall(Crystals.drawList, game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
@@ -107,22 +117,27 @@ function StatePlaying:draw()
     end
 
     -- Qix Entities
+    Logger.setLastAction("DRAW", "StatePlaying: qixList draw (%d)", #game.qixList)
     for _, qix in ipairs(game.qixList) do
         pcall(qix.draw, qix, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Sparx Enemies
+    Logger.setLastAction("DRAW", "StatePlaying: sparxList draw (%d)", #game.sparxList)
     for _, spx in ipairs(game.sparxList) do
         pcall(spx.draw, spx, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Player Marker
+    Logger.setLastAction("DRAW", "StatePlaying: player.draw (x=%d, y=%d, shielded=%s)", game.player.x, game.player.y, tostring(game.player:isShielded()))
     pcall(game.player.draw, game.player, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
 
     -- Visual FX Particles
+    Logger.setLastAction("DRAW", "StatePlaying: Particles.draw")
     pcall(game.Particles.draw)
 
     -- Ambient Flyby Spaceships
+    Logger.setLastAction("DRAW", "StatePlaying: AmbientShips.draw")
     pcall(game.AmbientShips.draw)
 
     -- Floating Score Popups
@@ -135,7 +150,7 @@ function StatePlaying:draw()
         end
     end
 
-    -- Active Banner Alert (pcall-guarded, sharp 1px hardware outline, zero polyline tessellation)
+    -- Active Banner Alert (pcall-guarded, sharp 1px hardware lines, zero polyline tessellation)
     if game.bannerTimer > 0 and game.bannerText then
         pcall(function()
             local alpha = math.min(1, game.bannerTimer * 2.5)
@@ -145,7 +160,10 @@ function StatePlaying:draw()
             love.graphics.rectangle("fill", bx, by, bw, bh)
             love.graphics.setLineWidth(1)
             love.graphics.setColor(0.0, 0.95, 1.0, alpha * pulse)
-            love.graphics.rectangle("line", bx, by, bw, bh)
+            love.graphics.line(bx, by, bx + bw, by)
+            love.graphics.line(bx, by + bh, bx + bw, by + bh)
+            love.graphics.line(bx, by, bx, by + bh)
+            love.graphics.line(bx + bw, by, bx + bw, by + bh)
             love.graphics.setFont(game.fontMid)
             love.graphics.setColor(0, 0, 0, 0.85 * alpha)
             love.graphics.printf(game.bannerText, bx + 2, by + 12, bw, "center")
@@ -155,6 +173,7 @@ function StatePlaying:draw()
     end
 
     love.graphics.setLineWidth(1)
+    Logger.setLastAction("DRAW", "StatePlaying: draw done")
 end
 
 function StatePlaying:keypressed(key)

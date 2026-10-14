@@ -228,9 +228,24 @@ Embedded retro handheld development creates a notorious bottleneck: code runs sm
   5. Replace all instances of `polygon("fill", ...)` with hardware quads (`rectangle("fill", ...)`).
 
 ### C. Resilient Crash Diagnostics When Tools Are Missing
-* **The Problem**: Minimal Linux distributions on retro handhelds (ArkOS, AmberELEC) often lack both `gdb` and GNU `strings`. Standard diagnostics fail silently.
-* **The Solution**: In launcher scripts (`Qix.sh`), fallback to `grep -a -o -E` directly on the core dump:
-  ```bash
-  grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" "$CORE_FILE" | head -n 40
-  ```
+* **The Problem**: Minimal Linux distributions on retro handhelds (ArkOS, AmberELEC) often lack both `gdb` and GNU `strings`. Standard diagnostics fail silently or hang when running `strings` on 150+ MB core dumps.
+* **The Solution**:
+  1. **Direct ELF Core Dump Header Parser (`analyze_core.py`)**: A pure Python 3 script that parses ELF64 headers, `PT_NOTE`, `NT_PRSTATUS`, and `NT_FILE` tables in under 0.05 seconds without scanning raw dump memory. Directly extracts the faulting instruction pointer (`pc`), link register (`lr`), registers (`x0`–`x30`, `sp`), mapped shared libraries, and stack frame addresses.
+  2. In launcher scripts (`Qix.sh`), fallback to `head -c 25000000 "$CORE_FILE" | grep -a -o -E ...` to scan only the top segment without hanging.
+
+---
+
+## 14. Elimination of `circle("line")` & Dynamic Active Border Resolution on Respawn
+
+### A. Total Elimination of `love.graphics.circle("line")`
+* **The Problem**: In Love2D's C++ graphics subsystem, `circle("line", x, y, r)` generates a 30- to 40-vertex polyline loop and calls `Graphics::polyline(...)`. On the ARM Mali-G31 GPU under OpenGL ES 3.2:
+  1. When drawing small radii (e.g., $r = 3$ to $4\text{px}$), adjacent vertices are sub-pixel close. Miter join angle math divides by $\sin(\theta / 2)$, risking division by zero and vertex buffer corruption.
+  2. When the entity is near any viewport boundary (e.g., player respawning at $y = 250$ on bottom border, where $py = 478.2\text{px}$), the circle radius pushes vertices beyond $y = 480\text{px}$. Mali's hardware line-strip vertex clipper crashes with a fatal kernel signal 11 (`SIGSEGV`).
+* **The Solution**:
+  * **Complete Ban on `circle("line")`**: Replace all circle outlines with concentric filled discs (`circle("fill", x, y, r)` with an inner cutout disc), or pre-rendered hardware canvases. Filled circles use native OpenGL triangle fans, which are 100% mathematically stable, never compute miter joins, and never crash Mali vertex clippers.
+
+### B. Dynamic Active Border Resolution on Entity Respawn
+* **The Problem**: In late rounds (e.g. Round 6 with 75% claimed territory), initial level borders (such as $(0, 0)$ or $(354, 0)$) have been enclosed and converted to claimed territory (`CELL_CLAIMED_SLOW` or `CELL_CLAIMED_FAST`). If entities (Sparx or Player) are respawned at hardcoded $(0, 0)$ coordinates, they are placed inside dead/claimed cells. Sparx AI finds no valid neighboring border cells, causing entity entrapment or null pointer dereferencing in pathfinding loops.
+* **The Solution**:
+  * Implement `Grid:findNearestActiveBorder(targetX, targetY)`: Dynamically searches outward via concentric rings until finding a cell where `grid:isActiveBorder(x, y)` is `true`. Always initialize respawned Sparx and Player Marker using `findNearestActiveBorder`.
 
