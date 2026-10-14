@@ -86,6 +86,9 @@ $ESUDO sysctl -w debug.exception-trace=1 2>/dev/null || true
 $ESUDO sysctl -w kernel.core_pattern="/tmp/core" 2>/dev/null || true
 ulimit -c unlimited 2>/dev/null || true
 
+# Clean up stale flight recorder logs from previous runs
+rm -f /tmp/qix_breadcrumbs.txt /tmp/qix_last_action.txt /tmp/core 2>/dev/null || true
+
 # Record dmesg position prior to game start to isolate run-time kernel logs
 DMESG_LINES_BEFORE=$(dmesg 2>/dev/null | wc -l || echo 0)
 
@@ -107,6 +110,17 @@ echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
 
 if [ $QIX_EXIT_CODE -ne 0 ]; then
   echo "WARNING: Game exited with status $QIX_EXIT_CODE! Diagnostics:"
+
+  if [ -f "/tmp/qix_last_action.txt" ]; then
+    echo "--- Flight Recorder: Absolute Last Action Before Crash ---"
+    cat /tmp/qix_last_action.txt
+  fi
+
+  if [ -f "/tmp/qix_breadcrumbs.txt" ]; then
+    echo "--- Flight Recorder: Recent Engine Breadcrumbs ---"
+    tail -n 35 /tmp/qix_breadcrumbs.txt
+  fi
+
   echo "--- System Memory Info ---"
   free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | grep -E "MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree" || true
 
@@ -119,9 +133,9 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
 
   echo "--- Specific Crash / Segfault / OOM Alerts ---"
   if [ -n "$ESUDO" ]; then
-    $ESUDO dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer" | tail -n 20 || true
+    $ESUDO dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer|mali|panfrost|gpu page fault" | tail -n 25 || true
   else
-    dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer" | tail -n 20 || true
+    dmesg -T 2>/dev/null | grep -E -i "segfault|sigsegv|fatal signal|oom-killer|killed process|core dumped|unhandled level|null pointer|mali|panfrost|gpu page fault" | tail -n 25 || true
   fi
 
   CORE_FILE=""

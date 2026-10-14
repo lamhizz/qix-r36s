@@ -1,6 +1,7 @@
 -- Player marker and stix drawing engine for Qix
 local Audio = require("audio")
 local Particles = require("particles")
+local Logger = require("logger")
 
 local Player = {}
 Player.__index = Player
@@ -109,6 +110,7 @@ function Player:respawn()
     self.lastMoveDirX = 0
     self.lastMoveDirY = 0
     self:clearTurnBuffer()
+    Logger.breadcrumb("PLAYER", "Respawn at (%d, %d), shield=%.1fs", self.x, self.y, self.shieldTimer)
 end
 
 function Player:isShielded()
@@ -301,11 +303,13 @@ function Player:update(dt, input, qixList, onAreaCaptured, onDeath, offsetX, off
                     if not self.fuseActive then
                         self.fuseActive = true
                         self.fuseIndex = 1
+                        Logger.breadcrumb("FUSE", "Fuse ignited at origin! burning down stix")
                         Audio.startFuse()
                     end
 
                     self.fuseIndex = self.fuseIndex + self.fuseBurnSpeed * dt
                     if self.fuseIndex >= #self.stixPath then
+                        Logger.breadcrumb("FUSE", "Fuse burned to marker! Fatal ignition at (%d, %d)", self.x, self.y)
                         Audio.stopAll()
                         onDeath("fuse")
                         return
@@ -513,6 +517,7 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
             self.grid:set(nx, ny, self.grid.CELL_STIX)
             table.insert(self.stixPath, { x = nx, y = ny })
 
+            Logger.breadcrumb("PLAYER", "Start drawing stix from (%d, %d), isSlow=%s", self.drawOrigin.x, self.drawOrigin.y, tostring(self.isSlow))
             Audio.startDraw(self.isSlow)
             return nil
         end
@@ -539,6 +544,7 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
             self.x = nx
             self.y = ny
             table.insert(self.stixPath, { x = nx, y = ny })
+            Logger.breadcrumb("PLAYER", "Stix reached border at (%d, %d), path len=%d", nx, ny, #self.stixPath)
             Audio.stopDraw()
             Audio.stopFuse()
 

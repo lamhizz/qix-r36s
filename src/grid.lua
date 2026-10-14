@@ -110,22 +110,23 @@ local function parseImageHeader(head, fileSize)
         end
     end
 
-    -- Safety constraints for RK3326 handheld (1 GB shared system RAM)
-    local maxFileSize = 6.0 * 1024 * 1024 -- 6.0 MB maximum file size
-    local maxPixels = 16000000            -- 16 Megapixels maximum (e.g. 4000x4000)
-    local maxDim = 4096                   -- Max single dimension
+    -- Safety constraints for RK3326 handheld (1 GB shared system RAM, 640x480 screen)
+    -- High-res photos (e.g. 12-24 MP) require 48-96 MB raw C heap buffers, causing kernel OOM killer.
+    local maxFileSize = 4.0 * 1024 * 1024 -- 4.0 MB maximum file size
+    local maxPixels = 4000000             -- 4.0 Megapixels maximum (e.g. 2000x2000, 16MB raw buffer max)
+    local maxDim = 2560                   -- Max single dimension (2560px)
 
     if meta.fileSize > maxFileSize then
         meta.safe = false
-        meta.reason = string.format("File size %.2f MB exceeds 6.0 MB limit", meta.fileSize / (1024 * 1024))
+        meta.reason = string.format("File size %.2f MB exceeds 4.0 MB limit", meta.fileSize / (1024 * 1024))
     elseif meta.width > 0 and meta.height > 0 then
         local px = meta.width * meta.height
         if px > maxPixels then
             meta.safe = false
-            meta.reason = string.format("Resolution %dx%d (%0.1f MP) exceeds 16 MP limit", meta.width, meta.height, px / 1000000)
+            meta.reason = string.format("Resolution %dx%d (%0.1f MP) exceeds 4.0 MP limit", meta.width, meta.height, px / 1000000)
         elseif meta.width > maxDim or meta.height > maxDim then
             meta.safe = false
-            meta.reason = string.format("Dimension (%dx%d) exceeds 4096px limit", meta.width, meta.height)
+            meta.reason = string.format("Dimension (%dx%d) exceeds 2560px limit", meta.width, meta.height)
         elseif meta.components == 4 then
             meta.safe = false
             meta.reason = "CMYK color format unsupported (RGB required)"
@@ -177,6 +178,7 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
             data = nil
             if okData and fd then
                 local okImg, id = pcall(love.image.newImageData, fd)
+                if fd and fd.release then pcall(fd.release, fd) end
                 fd = nil
                 if okImg and id then
                     rawData = id
@@ -204,10 +206,12 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
     -- If image fits within limits, create image directly
     if srcW <= maxW and srcH <= maxH then
         local ok, img = pcall(love.graphics.newImage, rawData)
+        if rawData and rawData.release then pcall(rawData.release, rawData) end
         rawData = nil
         local dur = (love.timer and love.timer.getTime() or 0) - startTime
         if ok and img then
             Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, "1:1 Native")
+            collectgarbage("step", 100)
             return img, srcW, srcH, srcW, srcH
         end
         return nil
@@ -218,8 +222,11 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
     local dstW = math.max(1, math.floor(srcW * scale))
     local dstH = math.max(1, math.floor(srcH * scale))
 
+    Logger.breadcrumb("GRID", "Downscaling %s (%dx%d -> %dx%d)", name, srcW, srcH, dstW, dstH)
+
     local okData, compactData = pcall(love.image.newImageData, dstW, dstH)
     if not okData or not compactData then
+        if rawData and rawData.release then pcall(rawData.release, rawData) end
         rawData = nil
         return nil
     end
@@ -234,20 +241,26 @@ local function loadSafeImage(path, isExternal, maxW, maxH)
             compactData:setPixel(dx, dy, r, g, b, a)
         end
     end
+    if rawData and rawData.release then pcall(rawData.release, rawData) end
     rawData = nil
 
     local ok, img = pcall(love.graphics.newImage, compactData)
+    if compactData and compactData.release then pcall(compactData.release, compactData) end
     compactData = nil
     local dur = (love.timer and love.timer.getTime() or 0) - startTime
     if ok and img then
         Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, string.format("Downscaled to GPU %dx%d", dstW, dstH))
+        collectgarbage("step", 100)
         return img, srcW, srcH, dstW, dstH
     end
     return nil
 end
 
 function Grid:loadBackground(artEntry, deferUpdate)
-    self.bgImage = nil
+    if self.bgImage and self.bgImage.release then
+        pcall(self.bgImage.release, self.bgImage)
+        self.bgImage = nil
+    end
 
     if not artEntry then
         if not deferUpdate then self:updateAllPixels() end
@@ -272,8 +285,14 @@ function Grid:loadBackground(artEntry, deferUpdate)
 end
 
 function Grid:loadForeground(fgEntry, deferUpdate)
-    self.fgImage = nil
-    self.fgGridData = nil
+    if self.fgImage and self.fgImage.release then
+        pcall(self.fgImage.release, self.fgImage)
+        self.fgImage = nil
+    end
+    if self.fgGridData and self.fgGridData.release then
+        pcall(self.fgGridData.release, self.fgGridData)
+        self.fgGridData = nil
+    end
 
     if not fgEntry then
         if not deferUpdate then self:updateAllPixels() end
@@ -307,6 +326,7 @@ function Grid:loadForeground(fgEntry, deferUpdate)
             data = nil
             if okData and fd then
                 local okImg, loadedData = pcall(love.image.newImageData, fd)
+                if fd and fd.release then pcall(fd.release, fd) end
                 fd = nil
                 if okImg and loadedData then
                     imgData = loadedData
@@ -347,11 +367,13 @@ function Grid:loadForeground(fgEntry, deferUpdate)
                 self.fgGridData:setPixel(gx, gy, r, g, b, 1.0)
             end
         end
+        if imgData and imgData.release then pcall(imgData.release, imgData) end
         imgData = nil
 
         if not deferUpdate then self:updateAllPixels() end
         local dur = (love.timer and love.timer.getTime() or 0) - startTime
         Logger.logImageOp("LOAD", "GRID", name, srcW, srcH, meta and meta.fileSize, dur, string.format("Fitted to Grid %dx%d", targetW, targetH))
+        collectgarbage("step", 100)
         return true
     end
 
@@ -473,6 +495,8 @@ function Grid:completeStix(stixPath, isSlow, qixList)
     local h = self.height
     local cells = self.cells
     local claimType = isSlow and CELL_CLAIMED_SLOW or CELL_CLAIMED_FAST
+
+    Logger.breadcrumb("GRID", "completeStix: path=%d pts, isSlow=%s, qixes=%d", #stixPath, tostring(isSlow), qixList and #qixList or 0)
 
     -- 1. Commit stix path to BORDER and update dirty pixels
     for _, pt in ipairs(stixPath) do
@@ -670,6 +694,9 @@ function Grid:completeStix(stixPath, isSlow, qixList)
         self.image = love.graphics.newImage(self.imageData)
         self.image:setFilter("nearest", "nearest")
     end
+
+    Logger.breadcrumb("GRID", "completeStix done: captured=%d cells (%.1f%%), total=%.1f%%, splitQix=%s",
+        newlyCaptured, (newlyCaptured / self.totalInner) * 100, self:getClaimedPercent(), tostring(isSplitQix))
 
     return {
         capturedCells = newlyCaptured,

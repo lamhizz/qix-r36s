@@ -189,7 +189,7 @@ function Achievements.drawToasts(fontMid, fontSmall)
     -- Icon & Text
     love.graphics.setFont(fontSmall or love.graphics.getFont())
     love.graphics.setColor(0.2, 1.0, 0.4, 1.0 * alpha)
-    love.graphics.print("★ ACHIEVEMENT UNLOCKED! ★", boxX + 16, boxY + 8)
+    love.graphics.print("** ACHIEVEMENT UNLOCKED! **", boxX + 16, boxY + 8)
 
     love.graphics.setFont(fontMid or love.graphics.getFont())
     love.graphics.setColor(1, 1, 1, 1.0 * alpha)

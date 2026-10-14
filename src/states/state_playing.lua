@@ -79,7 +79,7 @@ function StatePlaying:draw()
     local game = self.game
 
     -- Top Arcade HUD Bar
-    game:drawHUD()
+    pcall(game.drawHUD, game)
 
     -- Playfield Grid (reveals background photo)
     if game.grid then
@@ -89,11 +89,11 @@ function StatePlaying:draw()
     -- Neon Viewport Shimmer Border
     local boardW = game.grid.width * game.scaleX
     local boardH = game.grid.height * game.scaleY
-    game.BorderFX.draw(game.offsetX, game.offsetY, boardW, boardH)
+    pcall(game.BorderFX.draw, game.offsetX, game.offsetY, boardW, boardH)
 
     -- Power Crystals (Level 4+)
     if #game.crystals > 0 then
-        Crystals.drawList(game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        pcall(Crystals.drawList, game.crystals, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Chrono Freeze Visual Overlay
@@ -108,16 +108,16 @@ function StatePlaying:draw()
 
     -- Qix Entities
     for _, qix in ipairs(game.qixList) do
-        qix:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        pcall(qix.draw, qix, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Sparx Enemies
     for _, spx in ipairs(game.sparxList) do
-        spx:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        pcall(spx.draw, spx, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Player Marker
-    game.player:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+    pcall(game.player.draw, game.player, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
 
     -- Visual FX Particles
     pcall(game.Particles.draw)

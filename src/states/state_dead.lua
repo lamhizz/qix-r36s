@@ -18,6 +18,7 @@ end
 
 function StateDead:enter(reason)
     self.game.deathTimer = 1.0
+    Logger.breadcrumb("DEATH", "Entered StateDead: reason=%s, remaining lives=%d", tostring(reason), self.game.lives)
 end
 
 function StateDead:update(dt)
@@ -53,21 +54,21 @@ end
 function StateDead:draw()
     local game = self.game
     -- Render HUD & Playfield
-    game:drawHUD()
+    pcall(game.drawHUD, game)
     if game.grid then
         pcall(game.grid.draw, game.grid, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
     -- Border loader
     local boardW = game.grid.width * game.scaleX
     local boardH = game.grid.height * game.scaleY
-    game.BorderFX.draw(game.offsetX, game.offsetY, boardW, boardH)
+    pcall(game.BorderFX.draw, game.offsetX, game.offsetY, boardW, boardH)
 
     -- Entities (frozen during death)
     for _, qix in ipairs(game.qixList) do
-        qix:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        pcall(qix.draw, qix, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
     for _, spx in ipairs(game.sparxList) do
-        spx:draw(game.offsetX, game.offsetY, game.scaleX, game.scaleY)
+        pcall(spx.draw, spx, game.offsetX, game.offsetY, game.scaleX, game.scaleY)
     end
 
     -- Visual FX (Explosion shards)

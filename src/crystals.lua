@@ -8,9 +8,9 @@ local Crystals = {}
 Crystals.__index = Crystals
 
 local TYPES = {
-    { id = "FREEZE", label = "CHRONO FREEZE", color = { 0.1, 0.9, 1.0 }, icon = "❄" },
-    { id = "BONUS",  label = "+5000 BONUS",    color = { 1.0, 0.85, 0.1 }, icon = "★" },
-    { id = "SHIELD", label = "SHIELD MATRIX",  color = { 0.2, 1.0, 0.4 }, icon = "🛡" }
+    { id = "FREEZE", label = "CHRONO FREEZE", color = { 0.1, 0.9, 1.0 }, icon = "[FREEZE]" },
+    { id = "BONUS",  label = "+5000 BONUS",    color = { 1.0, 0.85, 0.1 }, icon = "[BONUS]" },
+    { id = "SHIELD", label = "SHIELD MATRIX",  color = { 0.2, 1.0, 0.4 }, icon = "[SHIELD]" }
 }
 
 function Crystals.spawnForLevel(grid, levelNum)

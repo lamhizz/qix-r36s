@@ -26,11 +26,12 @@ This document records the critical lessons, failure modes, and hardware-level so
 * **The Solution**:
   1. **Binary Header Pre-flight Inspector**: Read only the first 64 KB of file headers in pure Lua to extract dimensions and color channels *before* calling decoding APIs.
   2. **Strict Safety Limits**:
-     * File size cap: Reject files $> 6.0\text{ MB}$.
-     * Resolution cap: Reject images $> 16\text{ Megapixels}$ or single dimensions $> 4096\text{px}$.
+     * File size cap: Reject files $> 4.0\text{ MB}$.
+     * Resolution cap: Reject images $> 4.0\text{ Megapixels}$ (e.g. $2000\times 2000$, $\le 16\text{ MB}$ raw buffer max) or single dimensions $> 2560\text{px}$.
      * Color format: Reject 4-channel CMYK JPEGs (print format) which crash Love2D.
-  3. **Resilient Deck Fallback**: Wrap all image loading in a retry loop (attempting up to 8 alternative images). If all fail, fall back to procedural graphics. The game must never crash due to a bad asset.
-  4. **Pre-Scale Assets**: Resize bundled backgrounds to max $1280\times 960$ and foreground skins to $710\times 530$.
+  3. **Explicit Memory Lifecycle Releases**: In Love2D C++, `ImageData`, `FileData`, and `Image` textures are native objects. Setting them to `nil` in Lua does *not* immediately free C heap/VRAM until the garbage collector sweeps them. Always explicitly call `:release()` on `rawData`, `compactData`, `fd`, and old `self.bgImage` textures immediately after use.
+  4. **Resilient Deck Fallback**: Wrap all image loading in a retry loop (attempting up to 8 alternative images). If all fail, fall back to procedural graphics. The game must never crash due to a bad asset.
+  5. **Pre-Scale Assets**: Resize bundled backgrounds to max $1280\times 960$ and foreground skins to $710\times 530$.
 
 ---
 
@@ -81,7 +82,7 @@ This document records the critical lessons, failure modes, and hardware-level so
     1. **Enable fatal signal output**: `sysctl -w kernel.print-fatal-signals=1` (forces the kernel to print the faulting library, IP, SP, and signal reason into `dmesg`).
     2. **Enable core dumps in tmpfs**: `sysctl -w kernel.core_pattern="/tmp/core"` and `ulimit -c unlimited`. Direct dumps to `/tmp` (RAM-backed tmpfs) because exFAT/FAT32 MicroSD cards truncate core dumps to 0 bytes.
     3. **Isolate run-time kernel logs**: Record `DMESG_LINES_BEFORE=$(dmesg | wc -l)` before starting the game. On exit with non-zero status, print only `dmesg | tail -n +$((DMESG_LINES_BEFORE + 1))` to avoid boot spam.
-    4. **In-game Breadcrumbs**: Maintain a lightweight in-memory ring buffer (`Logger.breadcrumb(...)`) tracking the last 60 engine actions (states, entity updates, draw frames) to trace the exact line of execution preceding any native fault.
+    4. **Real-Time tmpfs Flight Recorder**: Synchronize breadcrumbs to `/tmp/qix_breadcrumbs.txt` and `/tmp/qix_last_action.txt`. Because `/tmp` is a RAM-backed tmpfs on Linux, writes take microsecond latency with zero SD wear. If a native segfault or kernel OOM kill terminates the process, `Qix.sh` dumps the file contents immediately into `log.txt`, preserving the exact sequence of actions leading to the crash.
 
 ---
 

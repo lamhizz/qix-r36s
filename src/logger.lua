@@ -16,10 +16,40 @@ Logger.MAX_HISTORY = 40
 
 Logger.breadcrumbs = {}
 Logger.MAX_BREADCRUMBS = 60
+Logger.breadcrumbFile = "/tmp/qix_breadcrumbs.txt"
+Logger.lastActionFile = "/tmp/qix_last_action.txt"
+Logger.breadcrumbCount = 0
 
 local function getTimestamp()
     local t = os.time()
     return os.date("%Y-%m-%d %H:%M:%S", t)
+end
+
+function Logger.syncBreadcrumbToDisk(bc)
+    -- Write to tmpfs in RAM (lightning fast, zero SD card wear, survives native driver crashes)
+    pcall(function()
+        local f = io.open(Logger.breadcrumbFile, "a")
+        if f then
+            f:write(bc .. "\n")
+            f:close()
+        end
+        local fLast = io.open(Logger.lastActionFile, "w")
+        if fLast then
+            fLast:write(bc .. "\n")
+            fLast:close()
+        end
+    end)
+    Logger.breadcrumbCount = Logger.breadcrumbCount + 1
+    if Logger.breadcrumbCount >= 80 then
+        Logger.breadcrumbCount = 0
+        pcall(function()
+            local f = io.open(Logger.breadcrumbFile, "w")
+            if f then
+                f:write(table.concat(Logger.breadcrumbs, "\n") .. "\n")
+                f:close()
+            end
+        end)
+    end
 end
 
 function Logger.breadcrumb(tag, action, ...)
@@ -30,6 +60,7 @@ function Logger.breadcrumb(tag, action, ...)
     if #Logger.breadcrumbs > Logger.MAX_BREADCRUMBS then
         table.remove(Logger.breadcrumbs, 1)
     end
+    Logger.syncBreadcrumbToDisk(bc)
 end
 
 function Logger.dumpBreadcrumbs()
@@ -68,6 +99,19 @@ end
 function Logger.init()
     Logger.startTime = love.timer and love.timer.getTime() or 0
 
+    pcall(function()
+        local f = io.open(Logger.breadcrumbFile, "w")
+        if f then
+            f:write(string.format("[SESSION START] %s | QIX Arcade R36S\n", getTimestamp()))
+            f:close()
+        end
+        local fLast = io.open(Logger.lastActionFile, "w")
+        if fLast then
+            fLast:write("ENGINE_START\n")
+            fLast:close()
+        end
+    end)
+
     print(string.format("\n==================================================\n[SESSION START] %s | QIX Arcade R36S\n==================================================", getTimestamp()))
     io.stdout:flush()
 
@@ -85,6 +129,21 @@ function Logger.init()
         local limits = love.graphics.getSystemLimits()
         Logger.info("GRAPHICS", "Max Texture Size: %d | MultiCanvas: %s", limits.texturesize or 0, tostring(limits.multicanvas))
     end
+end
+
+function Logger.logMemory(tag, context)
+    local rssMb, availMb = Logger.getOSMemory()
+    local luaMb = collectgarbage("count") / 1024
+    local texMb = 0
+    if love.graphics and love.graphics.getStats then
+        local stats = love.graphics.getStats()
+        texMb = (stats.texturememory or 0) / (1024 * 1024)
+    end
+    local ctxStr = context and (" [" .. tostring(context) .. "]") or ""
+    Logger.info(tag or "MEMORY", "RAM Telemetry%s: Lua: %5.1fMB | VRAM: %5.1fMB | RSS: %s | Free RAM: %s",
+        ctxStr, luaMb, texMb,
+        rssMb and string.format("%.1fMB", rssMb) or "N/A",
+        availMb and string.format("%.1fMB", availMb) or "N/A")
 end
 
 function Logger.formatLog(level, tag, msg, ...)
@@ -242,7 +301,7 @@ function Logger.installErrorHandler()
             love.graphics.clear(0.08, 0.03, 0.05, 1)
             love.graphics.setColor(1, 0.2, 0.3, 1)
             love.graphics.rectangle("line", 16, 16, 608, 448, 6, 6)
-            love.graphics.printf("★ QIX ARCADE: UNEXPECTED EXCEPTION ★", 24, 28, 592, "center")
+            love.graphics.printf("** QIX ARCADE: UNEXPECTED EXCEPTION **", 24, 28, 592, "center")
 
             love.graphics.setColor(0.9, 0.9, 0.95, 1)
             love.graphics.printf("A diagnostic crash log was written to:\nports/qix/log.txt & saves/qix_arcade/qix_debug.log", 24, 52, 592, "center")

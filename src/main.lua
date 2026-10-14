@@ -526,6 +526,8 @@ function game:startLevel(levelNum)
     self.targetPercent = math.min(cfg.targetMax, cfg.targetBase + (levelNum - 1) * cfg.targetStep)
     Logger.info("GAME", "Starting Round %d (Difficulty: %s | Target: %d%% | SparxTimer: %ds)",
         levelNum, self.difficulty, self.targetPercent, math.max(12, cfg.sparxTimer - (levelNum * 2)))
+    Logger.breadcrumb("LEVEL", "Start Round %d, target=%d%%, diff=%s", levelNum, self.targetPercent, self.difficulty)
+    Logger.logMemory("GAME", "Round " .. levelNum .. " Start")
     collectgarbage("collect")
 
     -- Super Sparx introduced in later levels (Level 2+)
@@ -640,6 +642,9 @@ function game:onAreaCaptured(captureResult)
     if cutPts < 10 then cutPts = 10 end
     self.score = self.score + cutPts
     self:saveHighScore()
+
+    Logger.breadcrumb("CAPTURE", "Cut +%d pts, claimed=%.1f%% / goal=%d%% (slow=%s)",
+        cutPts, captureResult.percent, self.targetPercent, tostring(captureResult.isSlow))
 
     self.totalCuts = (self.totalCuts or 0) + 1
     if captureResult.cutPercent > (self.bestCutPercent or 0) then
@@ -780,6 +785,8 @@ function game:onPlayerDeath(reason, hitGridX, hitGridY)
     self.deathTimer = 1.0
     Logger.info("GAME", "Player lost life (%s). Remaining lives: %d | Level: %d | Score: %d",
         reason or "unknown", self.lives, self.level, self.score)
+    Logger.breadcrumb("DEATH", "Life lost (%s), lives left: %d, lvl: %d", reason or "unknown", self.lives, self.level)
+    Logger.logMemory("DEATH", "Post-Death")
 
     Audio.stopAll()
     Audio.play("death")
@@ -1291,7 +1298,7 @@ function game:drawTitle()
     -- Top High Score Ribbon
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(1, 0.85, 0.2, 0.9)
-    love.graphics.printf(string.format("★ ALL TIME HIGH SCORE: %06d ★", self.highScore), 0, 16, 640, "center")
+    love.graphics.printf(string.format("** ALL TIME HIGH SCORE: %06d **", self.highScore), 0, 16, 640, "center")
 
     -- 3. Centerpiece: Stunning Neon Arcade "QIX" Logo
     local titleY = 48
@@ -1383,9 +1390,9 @@ function game:drawTitle()
         MASTER = { 1.0, 0.35, 0.35 }
     }
     local diffSubtitles = {
-        CASUAL = "4 LIVES  •  55% GOAL  •  SLOWER SPARX",
-        ARCADE = "3 LIVES  •  65% GOAL  •  STANDARD ARCADE",
-        MASTER = "2 LIVES  •  75% GOAL  •  TURBO ENEMIES"
+        CASUAL = "4 LIVES  -  55% GOAL  -  SLOWER SPARX",
+        ARCADE = "3 LIVES  -  65% GOAL  -  STANDARD ARCADE",
+        MASTER = "2 LIVES  -  75% GOAL  -  TURBO ENEMIES"
     }
     local curCol = diffColors[self.difficulty] or { 0.0, 0.95, 1.0 }
 
@@ -1395,7 +1402,7 @@ function game:drawTitle()
 
     love.graphics.setFont(game.fontMid)
     love.graphics.setColor(curCol[1], curCol[2], curCol[3], 1.0)
-    love.graphics.printf(string.format("◄ [  %s  ] ►", self.difficulty), 0, 382, 640, "center")
+    love.graphics.printf(string.format("< [  %s  ] >", self.difficulty), 0, 382, 640, "center")
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.50, 0.60, 0.72, 0.85)
@@ -1408,10 +1415,10 @@ function game:drawTitle()
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.0, 0.95, 1.0, 0.9)
-    love.graphics.printf("▲/▼: SELECT   •   ◄/►: DIFFICULTY   •   (A)/START: CONFIRM", 0, 432, 640, "center")
+    love.graphics.printf("^/v: SELECT   -   </>: DIFFICULTY   -   (A)/START: CONFIRM", 0, 432, 640, "center")
 
     love.graphics.setColor(0.45, 0.52, 0.62, 0.85)
-    love.graphics.printf("KEYBOARD: ARROWS/WASD + ENTER/SPACE  •  QUIT: ESC", 0, 452, 640, "center")
+    love.graphics.printf("KEYBOARD: ARROWS/WASD + ENTER/SPACE  -  QUIT: ESC", 0, 452, 640, "center")
 
 end
 
@@ -1460,7 +1467,7 @@ function game:drawHowTo()
     -- Header Title
     love.graphics.setFont(game.fontMid)
     love.graphics.setColor(1.0, 0.85, 0.2, 1.0)
-    love.graphics.printf("★ HOW TO PLAY & RULES ★", mx, my + 14, mw, "center")
+    love.graphics.printf("** HOW TO PLAY & RULES **", mx, my + 14, mw, "center")
 
     -- Page Switcher Tabs
     local curPage = game.howToPage or 1
@@ -1519,7 +1526,7 @@ function game:drawHowTo()
         -- 1. Objective
         love.graphics.setFont(game.fontSmall)
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.print("► MISSION OBJECTIVE:", viewX + 4, contentY)
+        love.graphics.print("> MISSION OBJECTIVE:", viewX + 4, contentY)
         contentY = contentY + 18
 
         love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
@@ -1528,7 +1535,7 @@ function game:drawHowTo()
 
         -- 2. Dual Draw Speed Controls
         love.graphics.setColor(0.0, 0.95, 1.0, 1.0)
-        love.graphics.print("► DUAL DRAW SPEED CONTROLS:", viewX + 4, contentY)
+        love.graphics.print("> DUAL DRAW SPEED CONTROLS:", viewX + 4, contentY)
         contentY = contentY + 20
 
         -- Fast Draw Card
@@ -1573,7 +1580,7 @@ function game:drawHowTo()
 
         -- 3. Split-Qix Rule
         love.graphics.setColor(1.0, 0.85, 0.20, 1.0)
-        love.graphics.print("★ CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", viewX + 4, contentY)
+        love.graphics.print("** CLASSIC 1981 SPLIT-QIX RULE (LEVEL 3+):", viewX + 4, contentY)
         contentY = contentY + 18
 
         love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
@@ -1582,7 +1589,7 @@ function game:drawHowTo()
 
         -- 4. Intersection Snapping & Turn Assist
         love.graphics.setColor(0.2, 1.0, 0.45, 1.0)
-        love.graphics.print("► CORNER SNAPPING & TURN ASSIST:", viewX + 4, contentY)
+        love.graphics.print("> CORNER SNAPPING & TURN ASSIST:", viewX + 4, contentY)
         contentY = contentY + 18
 
         love.graphics.setColor(0.90, 0.92, 0.96, 1.0)
@@ -1594,7 +1601,7 @@ function game:drawHowTo()
         -- 1. Enemy Threats & Hazards
         love.graphics.setFont(game.fontSmall)
         love.graphics.setColor(1.0, 0.35, 0.45, 1.0)
-        love.graphics.print("► ENEMY THREATS & HAZARDS:", viewX + 4, contentY)
+        love.graphics.print("> ENEMY THREATS & HAZARDS:", viewX + 4, contentY)
         contentY = contentY + 18
 
         -- Hazard 1: Qix
@@ -1627,12 +1634,12 @@ function game:drawHowTo()
         love.graphics.setColor(1.0, 0.35, 0.35, 1.0)
         love.graphics.print("THE FUSE:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
-        love.graphics.printf("Stopping while drawing ignites a fuse that races down your trail—keep moving!", viewX + 14, contentY + 22, cardW - 24, "left")
+        love.graphics.printf("Stopping while drawing ignites a fuse that races down your trail--keep moving!", viewX + 14, contentY + 22, cardW - 24, "left")
         contentY = contentY + 56
 
         -- 2. Tactical Power Collectibles (Level 4+)
         love.graphics.setColor(0.2, 0.95, 0.6, 1.0)
-        love.graphics.print("► TACTICAL POWER COLLECTIBLES (LEVEL 4+):", viewX + 4, contentY)
+        love.graphics.print("> TACTICAL POWER COLLECTIBLES (LEVEL 4+):", viewX + 4, contentY)
         contentY = contentY + 18
 
         love.graphics.setColor(0.85, 0.88, 0.94, 1.0)
@@ -1732,7 +1739,7 @@ function game:drawHowTo()
     local pulse = 0.5 + 0.5 * math.sin(self.titleBlink * 3)
     love.graphics.setColor(0.2, 1.0, 0.4, 0.7 + 0.3 * pulse)
     love.graphics.setFont(game.fontSmall)
-    love.graphics.printf("▲/▼: SCROLL   •   ◄/►: SWITCH PAGE   •   (A) OR (B) TO RETURN", mx, my + 420, mw, "center")
+    love.graphics.printf("^/v: SCROLL   -   </>: SWITCH PAGE   -   (A) OR (B) TO RETURN", mx, my + 420, mw, "center")
 end
 
 function game:drawBadgesGallery()
@@ -1758,7 +1765,7 @@ function game:drawBadgesGallery()
     -- Header
     love.graphics.setFont(game.fontMid)
     love.graphics.setColor(1.0, 0.88, 0.2, 1.0)
-    love.graphics.printf("★ ACHIEVEMENTS & MEDALS ★", mx, my + 10, mw, "center")
+    love.graphics.printf("** ACHIEVEMENTS & MEDALS **", mx, my + 10, mw, "center")
 
     -- Unlocked count & mini progress bar
     local unlockedCount = Achievements.getUnlockedCount()
@@ -1854,7 +1861,7 @@ function game:drawBadgesGallery()
     local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 4)
     love.graphics.setColor(0.2, 1.0, 0.4, 0.7 + 0.3 * pulse)
     love.graphics.setFont(game.fontSmall)
-    love.graphics.printf("▲/▼: SCROLL   •   PRESS (B) OR (A) TO RETURN TO MAIN MENU", mx, my + mh - 20, mw, "center")
+    love.graphics.printf("^/v: SCROLL   -   PRESS (B) OR (A) TO RETURN TO MAIN MENU", mx, my + mh - 20, mw, "center")
 end
 
 function game:drawPauseMenu()
@@ -1869,7 +1876,7 @@ function game:drawPauseMenu()
     -- Header
     love.graphics.setColor(1, 0.85, 0.2, 1)
     love.graphics.setFont(game.fontMid)
-    love.graphics.printf("★ SYSTEM PAUSE ★", 95, 48, 450, "center")
+    love.graphics.printf("** SYSTEM PAUSE **", 95, 48, 450, "center")
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.3)
@@ -1900,24 +1907,24 @@ function game:drawPauseMenu()
             }
             local col = diffColors[self.difficulty] or { 0.0, 0.95, 1.0, 1 }
             love.graphics.setColor(unpack(col))
-            local display = isSelected and string.format("◄ [ %s ] ►", self.difficulty) or string.format("[ %s ]", self.difficulty)
+            local display = isSelected and string.format("< [ %s ] >", self.difficulty) or string.format("[ %s ]", self.difficulty)
             love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "CRT_FILTER" then
             local valText = self.crtFilter and "ON" or "OFF"
             local col = self.crtFilter and { 0.2, 1.0, 0.4, 1 } or { 0.6, 0.6, 0.6, 1 }
             love.graphics.setColor(unpack(col))
-            local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
+            local display = isSelected and string.format("< [ %s ] >", valText) or string.format("[ %s ]", valText)
             love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "AUDIO" then
             local valText = Audio.muted and "MUTED" or "ON"
             local col = Audio.muted and { 1.0, 0.4, 0.4, 1 } or { 0.2, 1.0, 0.4, 1 }
             love.graphics.setColor(unpack(col))
-            local display = isSelected and string.format("◄ [ %s ] ►", valText) or string.format("[ %s ]", valText)
+            local display = isSelected and string.format("< [ %s ] >", valText) or string.format("[ %s ]", valText)
             love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "VOLUME" then
             local pct = math.floor(Audio.volume * 100 + 0.5)
             love.graphics.setColor(0.3, 0.9, 1.0, 1)
-            local display = isSelected and string.format("◄ %3d%% ►", pct) or string.format("%3d%%", pct)
+            local display = isSelected and string.format("< %3d%% >", pct) or string.format("%3d%%", pct)
             love.graphics.printf(display, 310, y + 3, 200, "right")
         elseif item.id == "RESUME" then
             love.graphics.setColor(0.3, 0.85, 1.0, isSelected and 1.0 or 0.6)
@@ -1930,7 +1937,7 @@ function game:drawPauseMenu()
 
     love.graphics.setFont(game.fontSmall)
     love.graphics.setColor(0.5, 0.6, 0.7, 1)
-    love.graphics.printf("▲/▼: SELECT   ◄/►: CHANGE   (A): SELECT   (B): RESUME", 95, 396, 450, "center")
+    love.graphics.printf("^/v: SELECT   </>: CHANGE   (A): SELECT   (B): RESUME", 95, 396, 450, "center")
 end
 
 function game:drawLevelClear()
@@ -1963,7 +1970,7 @@ function game:drawLevelClear()
 
         love.graphics.setFont(game.fontMid)
         love.graphics.setColor(0.2, 1.0, 0.4, 1)
-        love.graphics.printf(string.format("★ LEVEL %d COMPLETE! ★", self.level), 40, 375, 560, "center")
+        love.graphics.printf(string.format("** LEVEL %d COMPLETE! **", self.level), 40, 375, 560, "center")
 
         love.graphics.setFont(game.font)
         love.graphics.setColor(1, 1, 1, 1)
