@@ -200,3 +200,37 @@ Embedded retro handheld development creates a notorious bottleneck: code runs sm
   2. **Cadence Stepping in Movement Loops**: Only trigger step sounds every $N$ units of movement (e.g. every 10 units), preserving classic arcade step cadence without flooding the audio subsystem.
   3. **Active Loop Sound Guard**: In looping sound toggles (`startDraw`, `startFuse`), check `if activeLoops[name] == src and src:isPlaying() then return end` to prevent stopping and re-allocating OpenAL voices.
 
+---
+
+## 13. State Machine Deferral, Dangling Line Width, & Out-Of-Bounds Circle Traps
+
+### A. Re-entrant State Mutation Inside `update()` Loops (NaN-Tagged Pointer Crash)
+* **The Problem**: When a game state (e.g. `StateDead:update`) calls `game:setState("PLAYING")`, `self.current` is mutated while the LuaJIT VM is actively executing inside `self.current:update(dt)`. Under LuaJIT GC64 mode on aarch64, replacing the active object beneath the running call frame causes trace de-optimization failures, where register `x24` holds the NaN-tag for nil (`0xfff9000000000000`) and the VM or C callback attempts to dereference `x0 = 0x0000000000000000` (SIGSEGV 11).
+* **The Solution**: In `StateMachine`, defer transitions requested during `update()`:
+  ```lua
+  function StateMachine:change(stateName, ...)
+      if self.isUpdating then
+          self.pendingChange = { stateName = stateName, args = { ... } }
+          return
+      end
+      self:_applyChange(stateName, ...)
+  end
+  ```
+  Apply `pendingChange` at the end of `StateMachine:update()` after the previous state's update method has cleanly returned.
+
+### B. Dangling `setLineWidth` Leakage & Wide Circle Tessellation
+* **The Problem**: Setting `love.graphics.setLineWidth(thickness)` (e.g. 2.5px, 3.8px) and exiting without restoring `setLineWidth(1)` leaks wide stroke state into subsequent draw routines. When a subsequent routine draws `circle("line", x, y, r)` or `rectangle("line", ...)`, Love2D tessellates it as a polyline triangle strip. If any coordinate intersects or extends beyond the screen edge (e.g. $y + r = 489 > 480$ on a 480p viewport), the Mali-G31 GLES driver segfaults during clipping.
+* **The Solution**:
+  1. Always restore `love.graphics.setLineWidth(1)` before returning from any function that alters line width.
+  2. Enforce `love.graphics.setLineWidth(1)` at both the start and end of `love.draw()`.
+  3. Clamp all outline circles and entity radii to stay strictly within screen bounds ($y + r \le 476$).
+  4. Never use rounded rectangle outlines `rectangle("line", x, y, w, h, rx, ry)` — use sharp rectangle lines `rectangle("line", x, y, w, h)`.
+  5. Replace all instances of `polygon("fill", ...)` with hardware quads (`rectangle("fill", ...)`).
+
+### C. Resilient Crash Diagnostics When Tools Are Missing
+* **The Problem**: Minimal Linux distributions on retro handhelds (ArkOS, AmberELEC) often lack both `gdb` and GNU `strings`. Standard diagnostics fail silently.
+* **The Solution**: In launcher scripts (`Qix.sh`), fallback to `grep -a -o -E` directly on the core dump:
+  ```bash
+  grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" "$CORE_FILE" | head -n 40
+  ```
+

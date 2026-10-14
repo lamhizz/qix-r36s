@@ -153,7 +153,11 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
       gdb -batch -ex "bt" -ex "bt full" "$LOVE_BIN" "$CORE_FILE" 2>/dev/null || true
     else
       echo "GDB not found on device. Extracting crash stack symbols from core dump:"
-      strings "$CORE_FILE" 2>/dev/null | grep -E "liblove|libopenal|libmali|libc\.so|libluajit|libpthread|\[string |src/" | head -n 40 || true
+      if command -v strings >/dev/null 2>&1; then
+        strings "$CORE_FILE" 2>/dev/null | grep -E "liblove|libopenal|libmali|libc\.so|libluajit|libpthread|\[string |src/" | head -n 40 || true
+      else
+        grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" "$CORE_FILE" 2>/dev/null | head -n 40 || true
+      fi
     fi
   fi
 fi

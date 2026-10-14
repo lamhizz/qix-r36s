@@ -179,12 +179,12 @@ function Achievements.drawToasts(fontMid, fontSmall)
 
     -- Toast backdrop
     love.graphics.setColor(0.04, 0.06, 0.12, 0.92 * alpha)
-    love.graphics.rectangle("fill", boxX, boxY, boxW, boxH, 8, 8)
+    love.graphics.rectangle("fill", boxX, boxY, boxW, boxH, 6, 6)
 
-    -- Toast border
+    -- Toast border (safe 1px sharp line, zero tessellation)
+    love.graphics.setLineWidth(1)
     love.graphics.setColor(1.0, 0.85, 0.2, 0.95 * alpha)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", boxX, boxY, boxW, boxH, 8, 8)
+    love.graphics.rectangle("line", boxX, boxY, boxW, boxH)
 
     -- Icon & Text
     love.graphics.setFont(fontSmall or love.graphics.getFont())
@@ -195,6 +195,7 @@ function Achievements.drawToasts(fontMid, fontSmall)
     love.graphics.setColor(1, 1, 1, 1.0 * alpha)
     local displayText = string.format("[%s] %s", toast.badge or "MEDAL", toast.title)
     love.graphics.print(displayText, boxX + 16, boxY + 22)
+    love.graphics.setLineWidth(1)
 end
 
 return Achievements

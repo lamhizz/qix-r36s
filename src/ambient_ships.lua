@@ -264,6 +264,7 @@ function AmbientShips.draw()
             end
         end
     end
+    love.graphics.setLineWidth(1)
 end
 
 return AmbientShips

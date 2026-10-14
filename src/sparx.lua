@@ -16,27 +16,24 @@ local DIRS = {
 local TURN_CW = { -1, 0, 1, 2 }
 local TURN_CCW = { 1, 0, -1, 2 }
 
--- Draws an 8-pointed star using 8 pure convex triangles from center (0, 0)
--- Bypasses Love2D EarCut / Libtess2 polygon triangulation completely,
--- guaranteeing 100% hardware stability on RK3326 Mali-G31 GPU.
+-- Draws an 8-pointed star using pure hardware quads (rectangle "fill")
+-- Completely avoids Love2D EarCut / Libtess2 polygon triangulation,
+-- eliminating any risk of null-pointer tessellation crashes on RK3326 Mali-G31 GPU.
 local function drawStarFan(tip, waist)
-    local x1, y1 = 0, -tip
-    local x2, y2 = waist, -waist
-    local x3, y3 = tip, 0
-    local x4, y4 = waist, waist
-    local x5, y5 = 0, tip
-    local x6, y6 = -waist, waist
-    local x7, y7 = -tip, 0
-    local x8, y8 = -waist, -waist
-
-    love.graphics.polygon("fill", 0, 0, x1, y1, x2, y2)
-    love.graphics.polygon("fill", 0, 0, x2, y2, x3, y3)
-    love.graphics.polygon("fill", 0, 0, x3, y3, x4, y4)
-    love.graphics.polygon("fill", 0, 0, x4, y4, x5, y5)
-    love.graphics.polygon("fill", 0, 0, x5, y5, x6, y6)
-    love.graphics.polygon("fill", 0, 0, x6, y6, x7, y7)
-    love.graphics.polygon("fill", 0, 0, x7, y7, x8, y8)
-    love.graphics.polygon("fill", 0, 0, x8, y8, x1, y1)
+    local w = waist * 2
+    local h = tip * 2
+    -- Vertical cross beam
+    love.graphics.rectangle("fill", -waist, -tip, w, h)
+    -- Horizontal cross beam
+    love.graphics.rectangle("fill", -tip, -waist, h, w)
+    -- 45-degree diagonal cross
+    love.graphics.push()
+    love.graphics.rotate(0.785398)
+    local diagW = waist * 1.5
+    local diagH = tip * 1.5
+    love.graphics.rectangle("fill", -diagW * 0.5, -diagH * 0.5, diagW, diagH)
+    love.graphics.rectangle("fill", -diagH * 0.5, -diagW * 0.5, diagH, diagW)
+    love.graphics.pop()
 end
 
 function Sparx.init()

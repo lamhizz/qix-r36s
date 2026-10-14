@@ -204,6 +204,20 @@ function love.load()
     local playerDrawOk = pcall(player.draw, player, 0, 0, 1.8, 1.8)
     assertTest("Player draw executed cleanly", playerDrawOk)
 
+    -- Test Player shield rendering at bottom border (verifying radius clamp & 1px safety)
+    player.x = 177
+    player.y = 250 -- bottom border
+    player.shieldTimer = 2.5
+    local shieldDrawOk = pcall(player.draw, player, 0, 30, 1.8, 1.74)
+    assertTest("Player shield at bottom border rendered with safe radius clamp", shieldDrawOk)
+
+    -- Test Sparx fallback hardware quad rendering (zero polygon triangulation)
+    local oldCanvas = Sparx.canvasNormal
+    Sparx.canvasNormal = nil
+    local sparxFallbackOk = pcall(spx.draw, spx, 0, 0, 1.8, 1.8)
+    Sparx.canvasNormal = oldCanvas
+    assertTest("Sparx fallback hardware quad rendering passed without EarCut", sparxFallbackOk)
+
     -- Crystals tests
     local cryList = Crystals.spawnForLevel(testGrid, 4)
     assertTest("Crystals spawned for Level 4", #cryList > 0)
@@ -316,6 +330,18 @@ function love.load()
 
         sm:change("LEVEL_CLEAR")
         assertTest("StateMachine changed to LEVEL_CLEAR", sm.currentStateName == "LEVEL_CLEAR" and mockGame.clearPhase == "SCORES")
+
+        -- Test deferred state transition requested during update()
+        local testTransitionState = {
+            update = function(self, dt)
+                mockGame.sm:change("PLAYING")
+            end
+        }
+        sm.states.TEST_DEFER = testTransitionState
+        sm:change("TEST_DEFER")
+        assertTest("StateMachine changed to TEST_DEFER", sm.currentStateName == "TEST_DEFER")
+        sm:update(0.016)
+        assertTest("StateMachine cleanly deferred transition to PLAYING during update()", sm.currentStateName == "PLAYING")
     end
 
     -- --------------------------------------------------------------------------

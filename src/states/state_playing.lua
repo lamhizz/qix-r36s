@@ -135,22 +135,26 @@ function StatePlaying:draw()
         end
     end
 
-    -- Active Banner Alert
+    -- Active Banner Alert (pcall-guarded, sharp 1px hardware outline, zero polyline tessellation)
     if game.bannerTimer > 0 and game.bannerText then
-        local alpha = math.min(1, game.bannerTimer * 2.5)
-        local pulse = 0.85 + 0.15 * math.sin(love.timer.getTime() * 10)
-        local bx, by, bw, bh = 24, 34, 592, 42
-        love.graphics.setColor(0.03, 0.05, 0.09, 0.94 * alpha)
-        love.graphics.rectangle("fill", bx, by, bw, bh, 6, 6)
-        love.graphics.setLineWidth(2)
-        love.graphics.setColor(0.0, 0.95, 1.0, alpha * pulse)
-        love.graphics.rectangle("line", bx, by, bw, bh, 6, 6)
-        love.graphics.setFont(game.fontMid)
-        love.graphics.setColor(0, 0, 0, 0.85 * alpha)
-        love.graphics.printf(game.bannerText, bx + 2, by + 12, bw, "center")
-        love.graphics.setColor(1.0, 0.88, 0.15, alpha)
-        love.graphics.printf(game.bannerText, bx, by + 10, bw, "center")
+        pcall(function()
+            local alpha = math.min(1, game.bannerTimer * 2.5)
+            local pulse = 0.85 + 0.15 * math.sin(love.timer.getTime() * 10)
+            local bx, by, bw, bh = 24, 34, 592, 42
+            love.graphics.setColor(0.03, 0.05, 0.09, 0.94 * alpha)
+            love.graphics.rectangle("fill", bx, by, bw, bh)
+            love.graphics.setLineWidth(1)
+            love.graphics.setColor(0.0, 0.95, 1.0, alpha * pulse)
+            love.graphics.rectangle("line", bx, by, bw, bh)
+            love.graphics.setFont(game.fontMid)
+            love.graphics.setColor(0, 0, 0, 0.85 * alpha)
+            love.graphics.printf(game.bannerText, bx + 2, by + 12, bw, "center")
+            love.graphics.setColor(1.0, 0.88, 0.15, alpha)
+            love.graphics.printf(game.bannerText, bx, by + 10, bw, "center")
+        end)
     end
+
+    love.graphics.setLineWidth(1)
 end
 
 function StatePlaying:keypressed(key)

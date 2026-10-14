@@ -1134,6 +1134,7 @@ end
 -- RENDERING
 -- ==============================================================================
 function love.draw()
+    love.graphics.setLineWidth(1)
     love.graphics.clear(0, 0, 0, 1)
 
     love.graphics.push()
@@ -1159,6 +1160,8 @@ function love.draw()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(game.crtCanvas, 0, 0)
     end
+
+    love.graphics.setLineWidth(1)
 end
 
 function game:drawHUD()
@@ -1277,6 +1280,7 @@ function game:drawHUD()
         love.graphics.setColor(0.2, 1.0, 0.5, 1)
         love.graphics.print(dbgText, 8, game.hudHeight + 4)
     end
+    love.graphics.setLineWidth(1)
 end
 
 function game:drawTitle()

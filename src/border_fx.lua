@@ -146,12 +146,15 @@ function BorderFX.draw(bx, by, bw, bh)
     local effW = right - left
     local effH = bottom - top
 
-    -- Base Track: Thicker guide track showing the unfilled boundary
-    love.graphics.setLineWidth(2.5)
+    -- Base Track: Crisp 1px guide track showing the unfilled boundary
+    love.graphics.setLineWidth(1)
     love.graphics.setColor(0.12, 0.18, 0.28, 0.55)
     love.graphics.rectangle("line", left, top, effW, effH)
 
-    if pct <= 0.0001 then return end
+    if pct <= 0.0001 then
+        love.graphics.setLineWidth(1)
+        return
+    end
 
     -- Active Corner Beams (Acting as Level Cut Progress Bar):
     -- 1. Bottom-Left Vertical (bl-vertical): Shoots UP from (left, bottom) toward (left, top)
@@ -177,6 +180,8 @@ function BorderFX.draw(bx, by, bw, bh)
     if trH_w > 0.5 then
         drawSegmentedBeam(right, top, right - trH_w, top, thickness, BorderFX.shimmerPhase, BorderFX.glintPhase, true, 20)
     end
+
+    love.graphics.setLineWidth(1)
 end
 
 return BorderFX

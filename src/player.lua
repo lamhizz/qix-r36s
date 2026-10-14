@@ -633,6 +633,7 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
             if intactIdx >= 4 then
                 pcall(love.graphics.line, intactCoords)
             end
+            love.graphics.setLineWidth(1)
         end
 
         -- 3. Fuse Warning Ember (hesitation warning at Stix origin)
@@ -682,15 +683,24 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
     local py = offsetY + self.y * scaleY
     local size = 5.0 * scaleX
 
-    -- Respawn shield flashing & pulsing aura
+    -- Respawn shield flashing & pulsing aura (safe 1px lines, clamped within viewport)
     if self:isShielded() then
-        local pulse = 1.0 + 0.25 * math.sin(self.animTime * 12)
+        local pulse = 1.0 + 0.20 * math.sin(self.animTime * 12)
         local alpha = 0.45 + 0.35 * math.sin(self.animTime * 14)
+        local maxR = math.min(18 * pulse, math.max(4, 476 - py))
+        local innerR = math.min(14 * pulse, math.max(3, 476 - py))
+
+        -- Soft protective aura fill
+        love.graphics.setColor(0.0, 0.95, 1.0, alpha * 0.22)
+        love.graphics.circle("fill", px, py, maxR)
+
+        -- Concentric 1px safety rings (zero polyline tessellation on Mali-G31)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(0.0, 0.95, 1.0, alpha)
-        love.graphics.setLineWidth(1.6 * scaleX)
-        love.graphics.circle("line", px, py, 19 * pulse)
-        love.graphics.setColor(1.0, 0.85, 0.2, alpha * 0.7)
-        love.graphics.circle("line", px, py, 15 * pulse)
+        love.graphics.circle("line", px, py, maxR)
+        love.graphics.setColor(1.0, 0.85, 0.2, alpha * 0.75)
+        love.graphics.circle("line", px, py, innerR)
+        love.graphics.setLineWidth(1)
     end
 
     local cImg = getCursorImage()
@@ -721,9 +731,12 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
         love.graphics.setColor(mr, mg, mb, 1)
         love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
         love.graphics.setColor(0, 0, 0, 1)
+        love.graphics.setLineWidth(1)
         love.graphics.rectangle("line", -half, -half, half * 2, half * 2)
         love.graphics.pop()
     end
+
+    love.graphics.setLineWidth(1)
 end
 
 return Player

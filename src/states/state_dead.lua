@@ -74,6 +74,7 @@ function StateDead:draw()
     -- Visual FX (Explosion shards)
     pcall(game.Particles.draw)
     pcall(game.AmbientShips.draw)
+    love.graphics.setLineWidth(1)
 end
 
 function StateDead:leave()

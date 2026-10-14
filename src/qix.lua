@@ -274,6 +274,7 @@ function Qix:draw(offsetX, offsetY, scaleX, scaleY)
     end
 
     love.graphics.setBlendMode("alpha")
+    love.graphics.setLineWidth(1)
 end
 
 return Qix
