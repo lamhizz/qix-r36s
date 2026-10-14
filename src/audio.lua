@@ -100,8 +100,23 @@ function Audio.init()
     sounds.fuse = makeLoopTone(250, "noise")
 end
 
+local soundCooldowns = {
+    tick = 0.075,    -- Max ~13 ticks/sec (classic arcade step cadence)
+    capture = 0.120,
+    bonus = 0.200,
+    death = 0.500
+}
+local lastPlayTimes = {}
+
 function Audio.play(name)
     if Audio.muted or not sounds[name] then return end
+    local now = love.timer and love.timer.getTime() or 0
+    local minInterval = soundCooldowns[name] or 0.035
+    if (now - (lastPlayTimes[name] or 0)) < minInterval then
+        return -- Cooldown throttle to protect OpenAL / ALSA mixer queue on RK3326
+    end
+    lastPlayTimes[name] = now
+
     pcall(function()
         local s = sounds[name]
         if s:isPlaying() then
@@ -114,8 +129,11 @@ end
 
 function Audio.startDraw(isSlow)
     if Audio.muted then return end
-    Audio.stopDraw()
     local src = isSlow and sounds.drawSlow or sounds.drawFast
+    if activeLoops.draw == src and src:isPlaying() then
+        return -- Already playing the requested loop sound; avoid voice restart thrashing
+    end
+    Audio.stopDraw()
     if src then
         pcall(function()
             src:setVolume(Audio.volume * 0.6)
@@ -136,6 +154,7 @@ end
 function Audio.startFuse()
     if Audio.muted or activeLoops.fuse then return end
     if sounds.fuse then
+        if sounds.fuse:isPlaying() then return end
         pcall(function()
             sounds.fuse:setVolume(Audio.volume * 0.8)
             sounds.fuse:play()

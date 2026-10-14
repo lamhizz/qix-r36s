@@ -154,6 +154,7 @@ function love.load()
     Audio.init()
     Logger.init()
     Logger.installErrorHandler()
+    Sparx.init()
     BorderFX.init()
     AmbientShips.init()
 
@@ -662,20 +663,20 @@ function game:onAreaCaptured(captureResult)
         for _, c in ipairs(collected) do
             if c.type == "FREEZE" then
                 self.freezeTimer = 4.5
-                self.bannerText = "❄ CHRONO FREEZE! 4.5s TIME STOP! ❄"
+                self.bannerText = "** CHRONO FREEZE! 4.5s TIME STOP! **"
                 self.bannerTimer = 2.5
                 Audio.play("bonus")
             elseif c.type == "BONUS" then
                 local gemPts = 5000 * mult
                 self.score = self.score + gemPts
                 self:saveHighScore()
-                self.bannerText = string.format("★ STAR CACHE! +%d PTS! ★", gemPts)
+                self.bannerText = string.format("** STAR CACHE! +%d PTS! **", gemPts)
                 self.bannerTimer = 2.2
                 Audio.play("bonus")
             elseif c.type == "SHIELD" then
                 self.lives = math.min(6, self.lives + 1)
                 self.player.shieldTimer = math.max(self.player.shieldTimer, 5.0)
-                self.bannerText = "🛡 SHIELD MATRIX! +1 LIFE & BARRIER! 🛡"
+                self.bannerText = "** SHIELD MATRIX! +1 LIFE & BARRIER! **"
                 self.bannerTimer = 2.5
                 Audio.play("bonus")
             end
@@ -714,7 +715,7 @@ function game:onAreaCaptured(captureResult)
         self:saveHighScore()
         Achievements.unlock("divide_conquer")
 
-        self.bannerText = string.format("★ SPLIT-QIX! %dX MULTIPLIER UNLOCKED! ★", self.scoreMultiplier)
+        self.bannerText = string.format("** SPLIT-QIX! %dX MULTIPLIER UNLOCKED! **", self.scoreMultiplier)
         self.bannerTimer = 3.5
 
         if self.level == 1 then
@@ -732,13 +733,13 @@ function game:onAreaCaptured(captureResult)
 
     -- Massive cut celebration banner
     if captureResult.cutPercent >= 10 and (not self.bannerTimer or self.bannerTimer <= 0) then
-        self.bannerText = string.format("⚡ MASSIVE CUT! +%d PTS ⚡", cutPts)
+        self.bannerText = string.format("** MASSIVE CUT! +%d PTS **", cutPts)
         self.bannerTimer = 2.0
     end
 
     -- Near target alert
     if captureResult.percent >= (self.targetPercent - 8) and not self.nearTargetAlerted then
-        self.bannerText = "⚡ TARGET NEAR! CLOSE THE LOOP! ⚡"
+        self.bannerText = "** TARGET NEAR! CLOSE THE LOOP! **"
         self.bannerTimer = 2.2
         self.nearTargetAlerted = true
     end
@@ -1238,16 +1239,16 @@ function game:drawHUD()
     love.graphics.setColor(0.4, 0.5, 0.6, 1)
     love.graphics.rectangle("line", spxBarX, gaugeY, spxBarW, gaugeH)
 
-    -- Lives (Diamond markers, reusable table)
+    -- Lives (Diamond markers, rendered as rotated quads without EarCut)
     love.graphics.setColor(1, 1, 1, 1)
     for i = 1, self.lives do
         local lx = 565 + (i * 14)
         local ly = 13
-        LIFE_DIAMOND[1] = lx;     LIFE_DIAMOND[2] = ly - 5
-        LIFE_DIAMOND[3] = lx + 5; LIFE_DIAMOND[4] = ly
-        LIFE_DIAMOND[5] = lx;     LIFE_DIAMOND[6] = ly + 5
-        LIFE_DIAMOND[7] = lx - 5; LIFE_DIAMOND[8] = ly
-        love.graphics.polygon("fill", LIFE_DIAMOND)
+        love.graphics.push()
+        love.graphics.translate(lx, ly)
+        love.graphics.rotate(0.785398) -- 45 degrees
+        love.graphics.rectangle("fill", -3.5, -3.5, 7, 7)
+        love.graphics.pop()
     end
 
     -- Level Indicator
@@ -1684,11 +1685,15 @@ function game:drawHowTo()
         love.graphics.setColor(0.2, 1.0, 0.4, 0.5)
         love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
 
-        -- Shield Matrix diamond icon
+        -- Shield Matrix diamond icon (rendered as rotated quad without EarCut)
         love.graphics.setColor(0.2, 1.0, 0.4, 0.35)
         love.graphics.circle("fill", viewX + 26, contentY + 25, 16)
+        love.graphics.push()
+        love.graphics.translate(viewX + 26, contentY + 25)
+        love.graphics.rotate(0.785398)
         love.graphics.setColor(0.2, 1.0, 0.4, 1.0)
-        love.graphics.polygon("fill", viewX + 26, contentY + 16, viewX + 35, contentY + 25, viewX + 26, contentY + 34, viewX + 17, contentY + 25)
+        love.graphics.rectangle("fill", -6.5, -6.5, 13, 13)
+        love.graphics.pop()
         love.graphics.setColor(1, 1, 1, 0.9)
         love.graphics.circle("fill", viewX + 26, contentY + 25, 3.5)
 

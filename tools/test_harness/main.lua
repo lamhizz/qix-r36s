@@ -177,16 +177,39 @@ function love.load()
     assertTest("Qix checkStixCollision executed cleanly", type(hit) == "boolean")
 
     -- Sparx tests
+    Sparx.init()
     local spx = Sparx.new(testGrid, 0, 0, true, false, 1.0)
     assertTest("Sparx created at perimeter", spx ~= nil)
+
+    -- Test Sparx rendering across 120 frames (Normal + Super) to stress test geometry & rotating quads
+    local sparxDrawOk = true
+    for f = 1, 60 do
+        spx:update(0.016, player)
+        local okD, errD = pcall(spx.draw, spx, 0, 0, 1.8, 1.8)
+        if not okD then sparxDrawOk = false; print("Sparx.draw error: " .. tostring(errD)); break end
+    end
     spx:mutateToSuper()
     assertTest("Sparx mutated to Super Sparx", spx.isSuper == true)
+    for f = 1, 60 do
+        spx:update(0.016, player)
+        local okD, errD = pcall(spx.draw, spx, 0, 0, 1.8, 1.8)
+        if not okD then sparxDrawOk = false; print("Super Sparx.draw error: " .. tostring(errD)); break end
+    end
+    assertTest("Sparx 120-frame render & geometry safety passed", sparxDrawOk)
+
+    -- Test Qix and Player rendering
+    local qixDrawOk = pcall(qix.draw, qix, 0, 0, 1.8, 1.8)
+    assertTest("Qix draw executed cleanly", qixDrawOk)
+
+    local playerDrawOk = pcall(player.draw, player, 0, 0, 1.8, 1.8)
+    assertTest("Player draw executed cleanly", playerDrawOk)
 
     -- Crystals tests
     local cryList = Crystals.spawnForLevel(testGrid, 4)
     assertTest("Crystals spawned for Level 4", #cryList > 0)
     Crystals.updateList(cryList, 0.016)
-    assertTest("Crystals updateList executed cleanly", true)
+    local cryDrawOk = pcall(Crystals.drawList, cryList, 0, 0, 1.8, 1.8)
+    assertTest("Crystals updateList and drawList executed cleanly", cryDrawOk)
 
     -- --------------------------------------------------------------------------
     -- SUITE 5: ASSET INTEGRITY INSPECTION

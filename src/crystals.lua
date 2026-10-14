@@ -128,14 +128,14 @@ function Crystals.drawList(crystals, offsetX, offsetY, scaleX, scaleY)
             love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.35)
             love.graphics.circle("fill", cx, drawY, size * 1.8)
 
-            -- Diamond crystal polygon
+            -- Diamond crystal quad (Zero EarCut polygon triangulation)
+            love.graphics.push()
+            love.graphics.translate(cx, drawY)
+            love.graphics.rotate(0.785398)
+            local half = size * 0.707
             love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.95)
-            love.graphics.polygon("fill",
-                cx, drawY - size,
-                cx + size, drawY,
-                cx, drawY + size,
-                cx - size, drawY
-            )
+            love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
+            love.graphics.pop()
 
             -- White specular core
             love.graphics.setColor(1, 1, 1, 0.9)

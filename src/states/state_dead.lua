@@ -34,7 +34,7 @@ function StateDead:update(dt)
                 Sparx.new(game.grid, 0, 0, true, false, cfg.speedMult),
                 Sparx.new(game.grid, game.grid.width - 1, 0, false, false, cfg.speedMult)
             }
-            game.bannerText = "⚡ SAFE SHIELD ACTIVE ⚡"
+            game.bannerText = "** SAFE SHIELD ACTIVE **"
             game.bannerTimer = 1.8
             game:setState("PLAYING", "respawn")
         else

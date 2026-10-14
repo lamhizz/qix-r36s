@@ -137,6 +137,9 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
     if command -v gdb >/dev/null 2>&1; then
       echo "Running GDB stack trace:"
       gdb -batch -ex "bt" -ex "bt full" "$LOVE_BIN" "$CORE_FILE" 2>/dev/null || true
+    else
+      echo "GDB not found on device. Extracting crash stack symbols from core dump:"
+      strings "$CORE_FILE" 2>/dev/null | grep -E "liblove|libopenal|libmali|libc\.so|libluajit|libpthread|\[string |src/" | head -n 40 || true
     fi
   fi
 fi

@@ -2,6 +2,10 @@
 local Sparx = {}
 Sparx.__index = Sparx
 
+Sparx.canvasNormal = nil
+Sparx.canvasSuperCyan = nil
+Sparx.canvasSuperMagenta = nil
+
 local DIRS = {
     [0] = { dx = 1, dy = 0 },  -- 0: Right
     [1] = { dx = 0, dy = 1 },  -- 1: Down
@@ -12,9 +16,96 @@ local DIRS = {
 local TURN_CW = { -1, 0, 1, 2 }
 local TURN_CCW = { 1, 0, -1, 2 }
 
-local STAR_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-local STAR_POLYGON_OUTER = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-local STAR_POLYGON_CROSS = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+-- Draws an 8-pointed star using 8 pure convex triangles from center (0, 0)
+-- Bypasses Love2D EarCut / Libtess2 polygon triangulation completely,
+-- guaranteeing 100% hardware stability on RK3326 Mali-G31 GPU.
+local function drawStarFan(tip, waist)
+    local x1, y1 = 0, -tip
+    local x2, y2 = waist, -waist
+    local x3, y3 = tip, 0
+    local x4, y4 = waist, waist
+    local x5, y5 = 0, tip
+    local x6, y6 = -waist, waist
+    local x7, y7 = -tip, 0
+    local x8, y8 = -waist, -waist
+
+    love.graphics.polygon("fill", 0, 0, x1, y1, x2, y2)
+    love.graphics.polygon("fill", 0, 0, x2, y2, x3, y3)
+    love.graphics.polygon("fill", 0, 0, x3, y3, x4, y4)
+    love.graphics.polygon("fill", 0, 0, x4, y4, x5, y5)
+    love.graphics.polygon("fill", 0, 0, x5, y5, x6, y6)
+    love.graphics.polygon("fill", 0, 0, x6, y6, x7, y7)
+    love.graphics.polygon("fill", 0, 0, x7, y7, x8, y8)
+    love.graphics.polygon("fill", 0, 0, x8, y8, x1, y1)
+end
+
+function Sparx.init()
+    if Sparx.canvasNormal then return end
+    if not love.graphics or not love.graphics.newCanvas then return end
+
+    local function renderStarCanvas(isSuper, isCyan)
+        local cv = love.graphics.newCanvas(64, 64)
+        love.graphics.setCanvas(cv)
+        love.graphics.clear(0, 0, 0, 0)
+        love.graphics.push()
+        love.graphics.translate(32, 32)
+
+        -- 1. Outer Dark Silhouette
+        love.graphics.setColor(0, 0, 0, 0.90)
+        love.graphics.circle("fill", 0, 0, 16)
+
+        -- 2. Ambient Corona Halo
+        if isSuper then
+            love.graphics.setColor(1.0, 0.15, 0.45, 0.55)
+            love.graphics.circle("fill", 0, 0, 20)
+        else
+            love.graphics.setColor(1.0, 0.75, 0.0, 0.45)
+            love.graphics.circle("fill", 0, 0, 18)
+        end
+
+        -- 3. Secondary 45-degree Cross Star
+        love.graphics.push()
+        love.graphics.rotate(0.785398)
+        if isSuper then
+            love.graphics.setColor(1.0, 0.2, 0.8, 0.9)
+        else
+            love.graphics.setColor(1.0, 0.45, 0.05, 0.95)
+        end
+        drawStarFan(14 * 1.4, 14 * 0.35)
+        love.graphics.pop()
+
+        -- 4. Primary Rotating Star (Black outline + vibrant core)
+        love.graphics.setColor(0, 0, 0, 0.95)
+        drawStarFan(16 * 1.65 + 1.8, 16 * 0.42 + 1.2)
+
+        if isSuper then
+            if isCyan then
+                love.graphics.setColor(0.1, 0.95, 1.0, 1.0)
+            else
+                love.graphics.setColor(1.0, 0.15, 0.7, 1.0)
+            end
+        else
+            love.graphics.setColor(1.0, 0.95, 0.15, 1.0)
+        end
+        drawStarFan(16 * 1.65, 16 * 0.42)
+
+        -- 5. Hot White Specular Spark
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.circle("fill", 0, 0, 5)
+
+        love.graphics.pop()
+        love.graphics.setCanvas()
+        return cv
+    end
+
+    local ok1, cNorm = pcall(renderStarCanvas, false, false)
+    local ok2, cCyan = pcall(renderStarCanvas, true, true)
+    local ok3, cMag  = pcall(renderStarCanvas, true, false)
+
+    if ok1 and cNorm then Sparx.canvasNormal = cNorm end
+    if ok2 and cCyan then Sparx.canvasSuperCyan = cCyan end
+    if ok3 and cMag  then Sparx.canvasSuperMagenta = cMag end
+end
 
 function Sparx.new(grid, x, y, isClockwise, isSuper, speedMultiplier)
     local self = setmetatable({}, Sparx)
@@ -155,84 +246,60 @@ function Sparx:draw(offsetX, offsetY, scaleX, scaleY)
     local sx = offsetX + self.x * scaleX
     local sy = offsetY + self.y * scaleY
 
-    -- Significantly increased element size for high visibility on handheld screen
+    -- Element size scaled for handheld screen
     local baseSize = self.isSuper and 5.4 or 4.4
     local size = baseSize * scaleX
 
     love.graphics.push()
     love.graphics.translate(sx, sy)
 
-    -- 1. Outer High-Contrast Dark Silhouette (Ensures visibility against cyan borders & bright photos)
+    -- Primary: Pre-rendered hardware texture canvas (1 fast GPU draw call, zero EarCut triangulation)
+    if Sparx.canvasNormal then
+        local flash = math.floor(self.sparkAngle * 3) % 2
+        local cv = self.isSuper and (flash == 0 and Sparx.canvasSuperCyan or Sparx.canvasSuperMagenta) or Sparx.canvasNormal
+        if cv then
+            local cvScale = (size / 16.0)
+            love.graphics.rotate(self.sparkAngle)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(cv, 0, 0, 0, cvScale, cvScale, 32, 32)
+            love.graphics.pop()
+            return
+        end
+    end
+
+    -- Secondary Fallback: 100% convex triangle fans (Zero EarCut polygon triangulation)
     love.graphics.setColor(0, 0, 0, 0.88)
     love.graphics.circle("fill", 0, 0, size * 1.35)
 
-    -- 2. Ambient Corona / Glowing Halo
     local pulse = 0.75 + 0.25 * math.sin(self.sparkAngle * 2)
     if self.isSuper then
-        -- Super Sparx: Menacing pulsing magenta/red halo
         love.graphics.setColor(1.0, 0.15, 0.45, 0.55 * pulse)
         love.graphics.circle("fill", 0, 0, size * 1.7)
     else
-        -- Normal Sparx: Electric golden yellow halo
         love.graphics.setColor(1.0, 0.75, 0.0, 0.42 * pulse)
         love.graphics.circle("fill", 0, 0, size * 1.55)
     end
 
-    -- 3. Secondary 45-degree Cross Star (creates authentic 8-point dazzling arcade sparkler)
     local sCross = size * 0.95
-    local tipCross = sCross * 1.4
-    local waistCross = sCross * 0.35
-
-    love.graphics.rotate(self.sparkAngle + 0.785398) -- +45 degrees
-
-    STAR_POLYGON_CROSS[1]  = 0;            STAR_POLYGON_CROSS[2]  = -tipCross
-    STAR_POLYGON_CROSS[3]  = waistCross;   STAR_POLYGON_CROSS[4]  = -waistCross
-    STAR_POLYGON_CROSS[5]  = tipCross;     STAR_POLYGON_CROSS[6]  = 0
-    STAR_POLYGON_CROSS[7]  = waistCross;   STAR_POLYGON_CROSS[8]  = waistCross
-    STAR_POLYGON_CROSS[9]  = 0;            STAR_POLYGON_CROSS[10] = tipCross
-    STAR_POLYGON_CROSS[11] = -waistCross;  STAR_POLYGON_CROSS[12] = waistCross
-    STAR_POLYGON_CROSS[13] = -tipCross;    STAR_POLYGON_CROSS[14] = 0
-    STAR_POLYGON_CROSS[15] = -waistCross;  STAR_POLYGON_CROSS[16] = -waistCross
-
+    love.graphics.push()
+    love.graphics.rotate(self.sparkAngle + 0.785398)
     if self.isSuper then
         love.graphics.setColor(1.0, 0.2, 0.8, 0.9)
     else
         love.graphics.setColor(1.0, 0.45, 0.05, 0.95)
     end
-    love.graphics.polygon("fill", STAR_POLYGON_CROSS)
+    drawStarFan(sCross * 1.4, sCross * 0.35)
+    love.graphics.pop()
 
-    -- 4. Primary Rotating 4-Point Star
-    love.graphics.rotate(-0.785398) -- Return to sparkAngle
+    love.graphics.push()
+    love.graphics.rotate(self.sparkAngle)
     local tipMain = size * 1.65
     local waistMain = size * 0.42
 
-    -- Black outline on primary star for punchy contrast
-    local shadowTip = tipMain + 1.8
-    local shadowWaist = waistMain + 1.2
-    STAR_POLYGON_OUTER[1]  = 0;             STAR_POLYGON_OUTER[2]  = -shadowTip
-    STAR_POLYGON_OUTER[3]  = shadowWaist;   STAR_POLYGON_OUTER[4]  = -shadowWaist
-    STAR_POLYGON_OUTER[5]  = shadowTip;     STAR_POLYGON_OUTER[6]  = 0
-    STAR_POLYGON_OUTER[7]  = shadowWaist;   STAR_POLYGON_OUTER[8]  = shadowWaist
-    STAR_POLYGON_OUTER[9]  = 0;             STAR_POLYGON_OUTER[10] = shadowTip
-    STAR_POLYGON_OUTER[11] = -shadowWaist;  STAR_POLYGON_OUTER[12] = shadowWaist
-    STAR_POLYGON_OUTER[13] = -shadowTip;    STAR_POLYGON_OUTER[14] = 0
-    STAR_POLYGON_OUTER[15] = -shadowWaist;  STAR_POLYGON_OUTER[16] = -shadowWaist
-
     love.graphics.setColor(0, 0, 0, 0.95)
-    love.graphics.polygon("fill", STAR_POLYGON_OUTER)
-
-    -- Vibrant core star
-    STAR_POLYGON[1]  = 0;           STAR_POLYGON[2]  = -tipMain
-    STAR_POLYGON[3]  = waistMain;   STAR_POLYGON[4]  = -waistMain
-    STAR_POLYGON[5]  = tipMain;     STAR_POLYGON[6]  = 0
-    STAR_POLYGON[7]  = waistMain;   STAR_POLYGON[8]  = waistMain
-    STAR_POLYGON[9]  = 0;           STAR_POLYGON[10] = tipMain
-    STAR_POLYGON[11] = -waistMain;  STAR_POLYGON[12] = waistMain
-    STAR_POLYGON[13] = -tipMain;    STAR_POLYGON[14] = 0
-    STAR_POLYGON[15] = -waistMain;  STAR_POLYGON[16] = -waistMain
+    drawStarFan(tipMain + 1.8, waistMain + 1.2)
 
     if self.isSuper then
-        -- Flashing electric cyan / bright magenta beacon
         local flash = math.floor(self.sparkAngle * 3) % 2
         if flash == 0 then
             love.graphics.setColor(0.1, 0.95, 1.0, 1.0)
@@ -240,12 +307,11 @@ function Sparx:draw(offsetX, offsetY, scaleX, scaleY)
             love.graphics.setColor(1.0, 0.15, 0.7, 1.0)
         end
     else
-        -- Intense electric golden yellow
         love.graphics.setColor(1.0, 0.95, 0.15, 1.0)
     end
-    love.graphics.polygon("fill", STAR_POLYGON)
+    drawStarFan(tipMain, waistMain)
+    love.graphics.pop()
 
-    -- 5. Brilliant Hot White Center Spark
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", 0, 0, size * 0.42)
 

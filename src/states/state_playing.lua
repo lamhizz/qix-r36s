@@ -40,7 +40,7 @@ function StatePlaying:update(dt)
         if justMutated and not game.superSparxAlerted then
             game.superSparxAlerted = true
             Audio.play("death")
-            game.bannerText = "⚡ WARNING: SUPER SPARX UNLEASHED! ⚡"
+            game.bannerText = ">> WARNING: SUPER SPARX UNLEASHED! <<"
             game.bannerTimer = 2.5
         end
     end
@@ -103,7 +103,7 @@ function StatePlaying:draw()
         love.graphics.rectangle("fill", game.offsetX, game.offsetY, game.grid.width * game.scaleX, game.grid.height * game.scaleY)
         love.graphics.setColor(0.2, 0.95, 1.0, 0.9)
         love.graphics.setFont(game.fontSmall)
-        love.graphics.print(string.format("❄ FREEZE TIME: %0.1fs", game.freezeTimer), game.offsetX + 8, game.offsetY + 8)
+        love.graphics.print(string.format("[FREEZE] TIME STOP: %0.1fs", game.freezeTimer), game.offsetX + 8, game.offsetY + 8)
     end
 
     -- Qix Entities

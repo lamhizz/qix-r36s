@@ -53,6 +53,7 @@ function Player:reset(cfg)
     self.turnBufferDy = 0
     self.turnBufferTimer = 0
     self.turnBufferDuration = 0.120 -- 120ms input buffer
+    self.stepTickCounter = 0
 
     if cfg then
         self:applyDifficulty(cfg)
@@ -489,7 +490,11 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
             self.y = ny
             self.lastMoveDirX = dx
             self.lastMoveDirY = dy
-            Audio.play("tick")
+            self.stepTickCounter = (self.stepTickCounter or 0) + 1
+            if self.stepTickCounter >= 10 then
+                self.stepTickCounter = 0
+                Audio.play("tick")
+            end
             return nil
         end
 
@@ -559,8 +564,8 @@ function Player:step(dx, dy, wantsDraw, isSlowKey, qixList)
     return nil
 end
 
-local stixLineCoords = {}
-local DIAMOND_POLYGON = { 0, 0, 0, 0, 0, 0, 0, 0 }
+local burntCoords = {}
+local intactCoords = {}
 local cursorImg = nil
 
 local function getCursorImage()
@@ -592,13 +597,13 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
             for i = 1, fIdx do
                 local pt = self.stixPath[i]
                 burntIdx = burntIdx + 1
-                stixLineCoords[burntIdx] = offsetX + pt.x * scaleX
+                burntCoords[burntIdx] = offsetX + pt.x * scaleX
                 burntIdx = burntIdx + 1
-                stixLineCoords[burntIdx] = offsetY + pt.y * scaleY
+                burntCoords[burntIdx] = offsetY + pt.y * scaleY
             end
-            for i = burntIdx + 1, #stixLineCoords do stixLineCoords[i] = nil end
+            for i = burntIdx + 1, #burntCoords do burntCoords[i] = nil end
             if burntIdx >= 4 then
-                love.graphics.line(stixLineCoords)
+                pcall(love.graphics.line, burntCoords)
             end
         end
 
@@ -614,13 +619,13 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
             for i = startPtIdx, pathCount do
                 local pt = self.stixPath[i]
                 intactIdx = intactIdx + 1
-                stixLineCoords[intactIdx] = offsetX + pt.x * scaleX
+                intactCoords[intactIdx] = offsetX + pt.x * scaleX
                 intactIdx = intactIdx + 1
-                stixLineCoords[intactIdx] = offsetY + pt.y * scaleY
+                intactCoords[intactIdx] = offsetY + pt.y * scaleY
             end
-            for i = intactIdx + 1, #stixLineCoords do stixLineCoords[i] = nil end
+            for i = intactIdx + 1, #intactCoords do intactCoords[i] = nil end
             if intactIdx >= 4 then
-                love.graphics.line(stixLineCoords)
+                pcall(love.graphics.line, intactCoords)
             end
         end
 
@@ -698,21 +703,20 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(cImg, px, py, self.facingAngle or 0, shipScale, shipScale, 30.5, 29.5)
     else
-        -- Fallback diamond polygon if asset missing
+        -- Fallback diamond quad if asset missing (Zero EarCut polygon triangulation)
         local mr, mg, mb = 1, 1, 1
         if self.state == STATE_DRAWING then
             if self.isSlow then mr, mg, mb = 1, 0.4, 0.2 else mr, mg, mb = 0.2, 1, 1 end
         end
+        love.graphics.push()
+        love.graphics.translate(px, py)
+        love.graphics.rotate(0.785398)
+        local half = size * 0.707
         love.graphics.setColor(mr, mg, mb, 1)
-
-        DIAMOND_POLYGON[1] = px;        DIAMOND_POLYGON[2] = py - size
-        DIAMOND_POLYGON[3] = px + size; DIAMOND_POLYGON[4] = py
-        DIAMOND_POLYGON[5] = px;        DIAMOND_POLYGON[6] = py + size
-        DIAMOND_POLYGON[7] = px - size; DIAMOND_POLYGON[8] = py
-
-        love.graphics.polygon("fill", DIAMOND_POLYGON)
+        love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
         love.graphics.setColor(0, 0, 0, 1)
-        love.graphics.polygon("line", DIAMOND_POLYGON)
+        love.graphics.rectangle("line", -half, -half, half * 2, half * 2)
+        love.graphics.pop()
     end
 end
 

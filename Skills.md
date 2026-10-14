@@ -176,3 +176,26 @@ Embedded retro handheld development creates a notorious bottleneck: code runs sm
   * Uses `rsync` to push the `.love` bundle directly to `/roms2/ports/<game>/` over the local network in 2 seconds.
   * Restarts the launcher process remotely via SSH and streams `log.txt` live to the host terminal.
   * Slashes human iteration time from 15 minutes down to **15 seconds**.
+
+---
+
+## 11. Elimination of Concave Polygons & EarCut Segfaults (Mali-G31 GLES 3.2)
+
+### Complete Ban on `love.graphics.polygon("fill", concave_points)`
+* **The Problem**: In Love2D, concave or complex polygons (e.g. 8-pointed star, multi-vertex arrows, non-convex shapes) cannot be drawn as triangle fans and are routed through Love2D's internal **EarCut** polygon triangulator in C++. When polygon vertices rotate or scale via floating-point math, vertices can align collinearly or self-intersect. EarCut removes degenerate vertices; if all vertices collapse or an ear cannot be clipped, EarCut dereferences a `NULL` pointer (`x0 = 0x0000000000000000`), immediately producing a native kernel **SIGSEGV 11** crash (`Exit Code 139`).
+* **The Solution**:
+  1. **Pre-Rendered Hardware Canvases**: Pre-render animated sprites or complex vector stars into a tiny off-screen `Canvas` at startup (`Sparx.canvasNormal`, `Sparx.canvasSuper`). In `draw()`, draw the pre-rendered canvas in a single GPU texture call (`love.graphics.draw(cv, ...)`). Bypasses EarCut completely and reduces draw calls from 6 to 1 per entity.
+  2. **Convex Triangle Fans**: If dynamic geometry is required, break the shape into pure 3-vertex convex triangles meeting at `(0, 0)`. Polygons with exactly 3 vertices never invoke EarCut.
+  3. **Rotated Hardware Quads**: Simple diamonds and shards must be drawn as rotated rectangles (`love.graphics.rectangle("fill", -half, -half, size, size)` after `love.graphics.rotate(0.785398)`), never as 4-vertex polygons.
+
+---
+
+## 12. OpenAL-Soft Audio Voice Rate-Limiting & ALSA Queue Safety
+
+### Never Trigger High-Frequency Audio Playback in Continuous Step Loops
+* **The Problem**: When moving an entity continuously along a path (e.g. 160 grid units per second), triggering an audio effect on every single unit step causes `s:stop()` and `s:play()` to be called 160 times per second from the main Lua thread. In Linux ALSA on RK3326 without PulseAudio, OpenAL-Soft's background mixer thread races with the main thread, producing buffer underruns, ring buffer corruption, or driver panics.
+* **The Solution**:
+  1. **Audio Rate-Limiting Cooldowns**: Enforce a minimum interval in `Audio.play()` (e.g. 75ms minimum between `"tick"` sounds, limiting rate to ~13 calls/sec).
+  2. **Cadence Stepping in Movement Loops**: Only trigger step sounds every $N$ units of movement (e.g. every 10 units), preserving classic arcade step cadence without flooding the audio subsystem.
+  3. **Active Loop Sound Guard**: In looping sound toggles (`startDraw`, `startFuse`), check `if activeLoops[name] == src and src:isPlaying() then return end` to prevent stopping and re-allocating OpenAL voices.
+
