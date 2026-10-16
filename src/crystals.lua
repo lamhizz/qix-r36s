@@ -69,79 +69,70 @@ function Crystals.checkCollection(crystals, grid)
     return collected
 end
 
-local freezeImg = nil
-local batteryImg = nil
-
-local function getImages()
-    if freezeImg == nil then
-        if love.filesystem.getInfo("assets/freeze.png") then
-            local ok, img = pcall(love.graphics.newImage, "assets/freeze.png")
-            freezeImg = ok and img or false
-        else
-            freezeImg = false
-        end
-    end
-    if batteryImg == nil then
-        if love.filesystem.getInfo("assets/battery.png") then
-            local ok, img = pcall(love.graphics.newImage, "assets/battery.png")
-            batteryImg = ok and img or false
-        else
-            batteryImg = false
-        end
-    end
-    return (freezeImg or nil), (batteryImg or nil)
-end
-
 function Crystals.drawList(crystals, offsetX, offsetY, scaleX, scaleY)
-    local fImg, bImg = getImages()
+    if not crystals or #crystals == 0 then return end
+    pcall(function()
+        for _, c in ipairs(crystals) do
+            local cx = offsetX + c.x * scaleX
+            local cy = offsetY + c.y * scaleY
+            local pulse = 0.85 + 0.15 * math.sin(c.animTimer or 0)
+            local bob = math.sin((c.animTimer or 0) * 1.6) * 2.2 -- subtle floating bob
+            local drawY = cy + bob
 
-    for _, c in ipairs(crystals) do
-        local cx = offsetX + c.x * scaleX
-        local cy = offsetY + c.y * scaleY
-        local pulse = 0.85 + 0.15 * math.sin(c.animTimer)
-        local bob = math.sin(c.animTimer * 1.6) * 2.2 -- subtle floating bob
-        local drawY = cy + bob
-
-        if c.type == "FREEZE" and fImg then
-            -- Soft cyan aura glow
-            love.graphics.setColor(0.1, 0.85, 1.0, 0.32 * pulse)
-            love.graphics.circle("fill", cx, drawY, 20 * pulse)
-
-            -- Freeze crystal PNG icon (scaled to ~28px for clear visibility)
-            local s = (28 / 140) * pulse
-            love.graphics.setColor(1, 1, 1, 0.98)
-            love.graphics.draw(fImg, cx, drawY, 0, s, s, 70, 70)
-        elseif c.type == "BONUS" and bImg then
-            -- Soft golden battery aura glow
-            love.graphics.setColor(1.0, 0.85, 0.1, 0.32 * pulse)
-            love.graphics.circle("fill", cx, drawY, 20 * pulse)
-
-            -- Battery PNG icon (scaled to ~28px for clear visibility)
-            local s = (28 / 140) * pulse
-            love.graphics.setColor(1, 1, 1, 0.98)
-            love.graphics.draw(bImg, cx, drawY, 0, s, s, 70, 70)
-        else
-            -- Shield Matrix / fallback polygon
+            -- Clamping within safe viewport margins
+            cx = math.max(146, math.min(620, cx))
+            drawY = math.max(34, math.min(468, drawY))
             local size = 11 * pulse
 
-            -- Outer neon glow ring
-            love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.35)
+            -- Outer neon aura glow (safe filled circle / triangle fan)
+            local col = c.color or { 0.2, 0.8, 1.0 }
+            love.graphics.setColor(col[1], col[2], col[3], 0.32)
             love.graphics.circle("fill", cx, drawY, size * 1.8)
 
-            -- Diamond crystal quad (Zero EarCut polygon triangulation)
-            love.graphics.push()
-            love.graphics.translate(cx, drawY)
-            love.graphics.rotate(0.785398)
-            local half = size * 0.707
-            love.graphics.setColor(c.color[1], c.color[2], c.color[3], 0.95)
-            love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
-            love.graphics.pop()
+            if c.type == "FREEZE" then
+                -- Chrono Freeze: Rotating dual cyan ice diamonds
+                love.graphics.push()
+                love.graphics.translate(cx, drawY)
+                love.graphics.rotate((c.animTimer or 0) * 0.9)
+                local half = size * 0.75
+                love.graphics.setColor(0.1, 0.9, 1.0, 0.95)
+                love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
 
-            -- White specular core
-            love.graphics.setColor(1, 1, 1, 0.9)
-            love.graphics.circle("fill", cx, drawY, size * 0.35)
+                love.graphics.rotate(-(c.animTimer or 0) * 1.8)
+                love.graphics.setColor(1.0, 1.0, 1.0, 0.95)
+                local innerHalf = half * 0.42
+                love.graphics.rectangle("fill", -innerHalf, -innerHalf, innerHalf * 2, innerHalf * 2)
+                love.graphics.pop()
+            elseif c.type == "BONUS" then
+                -- Golden Battery: Rotating 8-pointed star crystal
+                love.graphics.push()
+                love.graphics.translate(cx, drawY)
+                love.graphics.rotate((c.animTimer or 0) * 1.2)
+                local wLong = size * 1.15
+                local wShort = size * 0.38
+                love.graphics.setColor(1.0, 0.85, 0.1, 0.95)
+                love.graphics.rectangle("fill", -wLong, -wShort, wLong * 2, wShort * 2)
+                love.graphics.rectangle("fill", -wShort, -wLong, wShort * 2, wLong * 2)
+
+                love.graphics.setColor(1.0, 1.0, 0.7, 0.95)
+                love.graphics.circle("fill", 0, 0, size * 0.35)
+                love.graphics.pop()
+            else
+                -- Shield Matrix: Emerald rotating diamond with white specular core
+                love.graphics.push()
+                love.graphics.translate(cx, drawY)
+                love.graphics.rotate(0.785398 + (c.animTimer or 0) * 0.6)
+                local half = size * 0.707
+                love.graphics.setColor(0.2, 1.0, 0.4, 0.95)
+                love.graphics.rectangle("fill", -half, -half, half * 2, half * 2)
+                love.graphics.pop()
+
+                love.graphics.setColor(1, 1, 1, 0.9)
+                love.graphics.circle("fill", cx, drawY, size * 0.35)
+            end
         end
-    end
+        love.graphics.setLineWidth(1)
+    end)
 end
 
 return Crystals

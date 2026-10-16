@@ -551,6 +551,7 @@ function game:startLevel(levelNum)
 
     -- Achievement check: Veteran Survivor (Level 5+)
     if levelNum >= 5 then
+        Logger.breadcrumb("LEVEL", "Triggering Level 5 milestone check (veteran_survivor)")
         Achievements.unlock("veteran_survivor")
     end
 
@@ -1151,7 +1152,7 @@ function love.draw()
     end
 
     -- Persistent Achievement Unlock Notifications
-    Achievements.drawToasts(game.fontMid, game.fontSmall)
+    pcall(Achievements.drawToasts, game.fontMid, game.fontSmall)
 
     love.graphics.pop()
 
@@ -1355,12 +1356,12 @@ function game:drawTitle()
 
             -- Glowing selection backdrop
             love.graphics.setColor(0.0, 0.55, 0.95, 0.28 + 0.15 * pulse)
-            love.graphics.rectangle("fill", btnX, by, btnW, btnH, 6, 6)
+            love.graphics.rectangle("fill", btnX, by, btnW, btnH)
 
             -- Glowing border
-            love.graphics.setLineWidth(2)
+            love.graphics.setLineWidth(1)
             love.graphics.setColor(1.0, 0.85, 0.15, 0.95)
-            love.graphics.rectangle("line", btnX, by, btnW, btnH, 6, 6)
+            love.graphics.rectangle("line", btnX, by, btnW, btnH)
 
             -- Animated neon pointers
             love.graphics.setFont(game.fontMid)
@@ -1374,11 +1375,11 @@ function game:drawTitle()
         else
             -- Clean translucent card
             love.graphics.setColor(0.05, 0.07, 0.13, 0.75)
-            love.graphics.rectangle("fill", btnX, by, btnW, btnH, 6, 6)
+            love.graphics.rectangle("fill", btnX, by, btnW, btnH)
 
             love.graphics.setLineWidth(1)
             love.graphics.setColor(0.2, 0.28, 0.4, 0.65)
-            love.graphics.rectangle("line", btnX, by, btnW, btnH, 6, 6)
+            love.graphics.rectangle("line", btnX, by, btnW, btnH)
 
             -- Unselected Button Label
             love.graphics.setFont(game.fontMid)
@@ -1462,11 +1463,11 @@ function game:drawHowTo()
     -- Instructions Modal Box
     local mx, my, mw, mh = 26, 16, 588, 448
     love.graphics.setColor(0.04, 0.06, 0.11, 0.96)
-    love.graphics.rectangle("fill", mx, my, mw, mh, 10, 10)
+    love.graphics.rectangle("fill", mx, my, mw, mh)
 
-    love.graphics.setLineWidth(2)
+    love.graphics.setLineWidth(1)
     love.graphics.setColor(0.0, 0.85, 1.0, 0.9)
-    love.graphics.rectangle("line", mx, my, mw, mh, 10, 10)
+    love.graphics.rectangle("line", mx, my, mw, mh)
 
     -- Header Title
     love.graphics.setFont(game.fontMid)
@@ -1484,11 +1485,11 @@ function game:drawHowTo()
     -- Tab 1
     if curPage == 1 then
         love.graphics.setColor(0.0, 0.55, 0.85, 0.9)
-        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH, 5, 5)
+        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH)
         love.graphics.setColor(1, 1, 1, 1)
     else
         love.graphics.setColor(0.06, 0.10, 0.16, 0.85)
-        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH, 5, 5)
+        love.graphics.rectangle("fill", tab1X, tabY, tabW, tabH)
         love.graphics.setColor(0.55, 0.65, 0.78, 1)
     end
     love.graphics.setFont(game.fontSmall)
@@ -1497,11 +1498,11 @@ function game:drawHowTo()
     -- Tab 2
     if curPage == 2 then
         love.graphics.setColor(0.0, 0.55, 0.85, 0.9)
-        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH, 5, 5)
+        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH)
         love.graphics.setColor(1, 1, 1, 1)
     else
         love.graphics.setColor(0.06, 0.10, 0.16, 0.85)
-        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH, 5, 5)
+        love.graphics.rectangle("fill", tab2X, tabY, tabW, tabH)
         love.graphics.setColor(0.55, 0.65, 0.78, 1)
     end
     love.graphics.setFont(game.fontSmall)
@@ -1544,9 +1545,10 @@ function game:drawHowTo()
 
         -- Fast Draw Card
         love.graphics.setColor(0.05, 0.12, 0.22, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60, 6, 6)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(0.0, 0.85, 1.0, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60, 6, 6)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60)
 
         -- Spaceship icon with cyan glow
         if hAssets.ship then
@@ -1564,9 +1566,10 @@ function game:drawHowTo()
 
         -- Slow Draw Card
         love.graphics.setColor(0.20, 0.08, 0.04, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60, 6, 6)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 60)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(1.0, 0.45, 0.1, 0.6)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60, 6, 6)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 60)
 
         -- Spaceship icon with orange glow
         if hAssets.ship then
@@ -1610,9 +1613,10 @@ function game:drawHowTo()
 
         -- Hazard 1: Qix
         love.graphics.setColor(0.12, 0.05, 0.14, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(1.0, 0.25, 0.85, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46)
         love.graphics.setColor(1.0, 0.35, 0.90, 1.0)
         love.graphics.print("THE QIX:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
@@ -1621,9 +1625,10 @@ function game:drawHowTo()
 
         -- Hazard 2: Sparx
         love.graphics.setColor(0.16, 0.12, 0.04, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(1.0, 0.80, 0.15, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46)
         love.graphics.setColor(1.0, 0.85, 0.20, 1.0)
         love.graphics.print("SPARX:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
@@ -1632,9 +1637,10 @@ function game:drawHowTo()
 
         -- Hazard 3: Fuse
         love.graphics.setColor(0.18, 0.05, 0.05, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 46)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(1.0, 0.30, 0.30, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 46)
         love.graphics.setColor(1.0, 0.35, 0.35, 1.0)
         love.graphics.print("THE FUSE:", viewX + 14, contentY + 6)
         love.graphics.setColor(0.88, 0.90, 0.95, 1.0)
@@ -1652,9 +1658,10 @@ function game:drawHowTo()
 
         -- Crystal 1: Freeze
         love.graphics.setColor(0.06, 0.14, 0.22, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(0.1, 0.9, 1.0, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50)
 
         -- Freeze PNG Asset Icon
         if hAssets.freeze then
@@ -1672,9 +1679,10 @@ function game:drawHowTo()
 
         -- Crystal 2: Bonus Battery
         love.graphics.setColor(0.18, 0.15, 0.04, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(1.0, 0.85, 0.1, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50)
 
         -- Battery PNG Asset Icon
         if hAssets.battery then
@@ -1692,9 +1700,10 @@ function game:drawHowTo()
 
         -- Crystal 3: Shield
         love.graphics.setColor(0.05, 0.16, 0.09, 0.92)
-        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("fill", viewX + 4, contentY, cardW, 50)
+        love.graphics.setLineWidth(1)
         love.graphics.setColor(0.2, 1.0, 0.4, 0.5)
-        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50, 5, 5)
+        love.graphics.rectangle("line", viewX + 4, contentY, cardW, 50)
 
         -- Shield Matrix diamond icon (rendered as rotated quad without EarCut)
         love.graphics.setColor(0.2, 1.0, 0.4, 0.35)
@@ -1893,9 +1902,10 @@ function game:drawPauseMenu()
 
         if isSelected then
             love.graphics.setColor(0.0, 0.7, 1.0, 0.22)
-            love.graphics.rectangle("fill", 110, y - 5, 420, 32, 6, 6)
+            love.graphics.rectangle("fill", 110, y - 5, 420, 32)
+            love.graphics.setLineWidth(1)
             love.graphics.setColor(0.0, 0.95, 1.0, 0.8)
-            love.graphics.rectangle("line", 110, y - 5, 420, 32, 6, 6)
+            love.graphics.rectangle("line", 110, y - 5, 420, 32)
         end
 
         local titleColor = isSelected and { 1, 1, 0.2, 1 } or { 0.75, 0.8, 0.9, 1 }
@@ -2150,10 +2160,10 @@ function game:drawGameOver()
 
         local function drawStatTile(x, y, label, value, valColor)
             love.graphics.setColor(0.07, 0.09, 0.15, 0.9)
-            love.graphics.rectangle("fill", x, y, tw, th, 6, 6)
+            love.graphics.rectangle("fill", x, y, tw, th)
             love.graphics.setLineWidth(1)
             love.graphics.setColor(0.20, 0.28, 0.42, 0.65)
-            love.graphics.rectangle("line", x, y, tw, th, 6, 6)
+            love.graphics.rectangle("line", x, y, tw, th)
 
             love.graphics.setFont(game.fontSmall)
             love.graphics.setColor(0.60, 0.70, 0.82, 0.95)

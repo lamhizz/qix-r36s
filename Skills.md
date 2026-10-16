@@ -255,3 +255,26 @@ Embedded retro handheld development creates a notorious bottleneck: code runs sm
   * **Strict Zero-I/O in Frame Loops**: Never call `io.open`, `f:write`, or file flushing inside `update()` or `draw()`.
   * Keep all per-frame telemetry in fast Lua memory (strings / ring buffers). Only sync to disk upon discrete event triggers (e.g., state changes, player death, level clear) or upon unhandled error traps.
 
+---
+
+## 15. Level 5 Milestone Safety: Achievement Toast Geometry, Crash Handler Resilience & Pure Procedural Crystals
+
+### A. Rounded Rectangle Elimination in On-Screen Toasts & Crash Catcher
+* **The Problem**: When reaching milestone levels (e.g., Level 5 unlocks `veteran_survivor` and 5th artwork unlocks `art_connoisseur`), achievement toasts render for the first time. Calling `rectangle("fill", boxX, boxY, boxW, boxH, rx, ry)` invokes Love2D's internal `calcRoundedPolygon` arc tessellator. On ARM Mali-G31 GLES 3.2, rounded polygon fans trigger immediate GPU driver memory faults (`SIGSEGV`). Furthermore, `logger.lua:drawCrash` also invoked a rounded outline (`rectangle("line", 16, 16, 608, 448, 6, 6)`), causing the crash handler itself to segfault before displaying diagnostics.
+* **The Solution**:
+  * Replace all rounded rectangles in HUD, toasts, modals, cards, and crash handlers with sharp hardware quads (`rectangle("fill", x, y, w, h)`) and sharp 1px outline frames (`rectangle("line", x, y, w, h)`).
+  * Wrap `Achievements.drawToasts` and `Achievements.save` in defensive `pcall` wrappers.
+
+### B. Pure Procedural Vector Crystals (Zero External Asset Dependency)
+* **The Problem**: Level 5 spawns dual tactical crystals (`FREEZE` and `BONUS`). Attempting to dynamically load and bind external PNG textures (`freeze.png`, `battery.png`) during active gameplay introduces VRAM allocations, palette/colormap decode hazards, and texture state switching stalls on Mali-G31.
+* **The Solution**:
+  * Render all tactical crystals (`FREEZE`, `BONUS`, `SHIELD`) purely through procedural neon quads and filled circles (concentric rotating diamonds, 8-pointed star crosses, and specular cores).
+  * 100% crash-proof, zero texture binding overhead, and faithful to authentic 1981 vector arcade aesthetics.
+
+### C. Launcher Disk Write Synchronization
+* **The Problem**: Linux buffers shell redirection (`tee`) in 4KB memory pages. If the console locks up or exits abnormally, exit status and crash diagnostics remain unwritten to physical SD storage.
+* **The Solution**:
+  * Use unbuffered tee (`stdbuf -oL -eL tee -a log.txt`).
+  * Explicitly call `sync` immediately after Love2D process exit and following diagnostic dump in `Qix.sh`.
+
+

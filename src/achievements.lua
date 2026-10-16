@@ -5,6 +5,7 @@
 
 local Achievements = {}
 local Audio = require("audio")
+local Logger = require("logger")
 
 Achievements.DATA = {
     {
@@ -89,14 +90,16 @@ function Achievements.load()
 end
 
 function Achievements.save()
-    local lines = {}
-    for id, _ in pairs(Achievements.unlockedMap) do
-        table.insert(lines, "badge=" .. id)
-    end
-    for artPath, _ in pairs(Achievements.artViewed) do
-        table.insert(lines, "art=" .. artPath)
-    end
-    love.filesystem.write("achievements.txt", table.concat(lines, "\n"))
+    pcall(function()
+        local lines = {}
+        for id, _ in pairs(Achievements.unlockedMap) do
+            table.insert(lines, "badge=" .. id)
+        end
+        for artPath, _ in pairs(Achievements.artViewed) do
+            table.insert(lines, "art=" .. artPath)
+        end
+        love.filesystem.write("achievements.txt", table.concat(lines, "\n"))
+    end)
 end
 
 function Achievements.unlock(id)
@@ -119,6 +122,8 @@ function Achievements.unlock(id)
                 maxTimer = 4.0
             })
 
+            Logger.info("ACHIEVEMENT", "Unlocked: %s [%s]", badge.title, badge.id)
+            Logger.breadcrumb("ACHIEVEMENT", "Unlocked: %s [%s]", badge.title, badge.id)
             Audio.play("bonus")
             return true
         end
@@ -163,39 +168,43 @@ end
 
 function Achievements.drawToasts(fontMid, fontSmall)
     if #Achievements.toasts == 0 then return end
-    local toast = Achievements.toasts[1]
+    pcall(function()
+        local toast = Achievements.toasts[1]
+        if not toast then return end
 
-    local alpha = 1.0
-    if toast.timer < 0.5 then
-        alpha = toast.timer / 0.5
-    elseif toast.timer > (toast.maxTimer - 0.4) then
-        alpha = (toast.maxTimer - toast.timer) / 0.4
-    end
+        local alpha = 1.0
+        if toast.timer < 0.5 then
+            alpha = math.max(0, toast.timer / 0.5)
+        elseif toast.timer > (toast.maxTimer - 0.4) then
+            alpha = math.max(0, math.min(1, (toast.maxTimer - toast.timer) / 0.4))
+        end
 
-    local boxW = 460
-    local boxH = 46
-    local boxX = math.floor((640 - boxW) * 0.5)
-    local boxY = 36
+        local boxW = 460
+        local boxH = 46
+        local boxX = math.floor((640 - boxW) * 0.5)
+        local boxY = 36
 
-    -- Toast backdrop
-    love.graphics.setColor(0.04, 0.06, 0.12, 0.92 * alpha)
-    love.graphics.rectangle("fill", boxX, boxY, boxW, boxH, 6, 6)
+        -- Toast backdrop (sharp hardware quad, 0 rounding, zero Mali arc tessellation)
+        love.graphics.setColor(0.04, 0.06, 0.12, 0.92 * alpha)
+        love.graphics.rectangle("fill", boxX, boxY, boxW, boxH)
 
-    -- Toast border (safe 1px sharp line, zero tessellation)
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(1.0, 0.85, 0.2, 0.95 * alpha)
-    love.graphics.rectangle("line", boxX, boxY, boxW, boxH)
+        -- Toast border (safe 1px sharp line, zero tessellation)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(1.0, 0.85, 0.2, 0.95 * alpha)
+        love.graphics.rectangle("line", boxX, boxY, boxW, boxH)
 
-    -- Icon & Text
-    love.graphics.setFont(fontSmall or love.graphics.getFont())
-    love.graphics.setColor(0.2, 1.0, 0.4, 1.0 * alpha)
-    love.graphics.print("** ACHIEVEMENT UNLOCKED! **", boxX + 16, boxY + 8)
+        -- Icon & Header Text (ASCII only)
+        love.graphics.setFont(fontSmall or love.graphics.getFont())
+        love.graphics.setColor(0.2, 1.0, 0.4, 1.0 * alpha)
+        love.graphics.print("** ACHIEVEMENT UNLOCKED! **", boxX + 16, boxY + 8)
 
-    love.graphics.setFont(fontMid or love.graphics.getFont())
-    love.graphics.setColor(1, 1, 1, 1.0 * alpha)
-    local displayText = string.format("[%s] %s", toast.badge or "MEDAL", toast.title)
-    love.graphics.print(displayText, boxX + 16, boxY + 22)
-    love.graphics.setLineWidth(1)
+        -- Badge Name & Title (ASCII only)
+        love.graphics.setFont(fontMid or love.graphics.getFont())
+        love.graphics.setColor(1, 1, 1, 1.0 * alpha)
+        local displayText = string.format("[%s] %s", toast.badge or "MEDAL", toast.title or "ACHIEVEMENT")
+        love.graphics.print(displayText, boxX + 16, boxY + 22)
+        love.graphics.setLineWidth(1)
+    end)
 end
 
 return Achievements

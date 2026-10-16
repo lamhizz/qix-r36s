@@ -22,8 +22,13 @@ get_controls
 GAMEDIR="/$directory/ports/qix"
 cd "$GAMEDIR"
 
-# Start logging
-> "$GAMEDIR/log.txt" && exec > >(tee "$GAMEDIR/log.txt") 2>&1
+# Start logging (unbuffered where supported)
+> "$GAMEDIR/log.txt"
+if command -v stdbuf >/dev/null 2>&1; then
+  exec > >(stdbuf -oL -eL tee -a "$GAMEDIR/log.txt") 2>&1
+else
+  exec > >(tee -a "$GAMEDIR/log.txt") 2>&1
+fi
 echo "=== Starting QIX (Native Love2D) ==="
 echo "GAMEDIR: $GAMEDIR"
 echo "controlfolder: $controlfolder"
@@ -106,6 +111,7 @@ fi
 echo "Launching Qix..."
 $LOVE_BIN "$GAMEDIR/qix.love"
 QIX_EXIT_CODE=$?
+sync 2>/dev/null || true
 echo "=== Qix Process Exited with Code: $QIX_EXIT_CODE ==="
 
 if [ $QIX_EXIT_CODE -ne 0 ]; then
@@ -162,6 +168,7 @@ if [ $QIX_EXIT_CODE -ne 0 ]; then
       head -c 25000000 "$CORE_FILE" 2>/dev/null | grep -a -o -E "[a-zA-Z0-9_\.\/-]{4,80}(liblove|libmali|libluajit|libopenal|libc\.so|love|[a-z_]+\.lua)[a-zA-Z0-9_\.\/-]*" 2>/dev/null | head -n 40 || true
     fi
   fi
+  sync 2>/dev/null || true
 fi
 
 # Cleanup with fallback if pm_finish is not available

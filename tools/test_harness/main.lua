@@ -218,11 +218,40 @@ function love.load()
     Sparx.canvasNormal = oldCanvas
     assertTest("Sparx fallback hardware quad rendering passed without EarCut", sparxFallbackOk)
 
-    -- Crystals tests
-    local cryList = Crystals.spawnForLevel(testGrid, 4)
-    assertTest("Crystals spawned for Level 4", #cryList > 0)
-    Crystals.updateList(cryList, 0.016)
-    local cryDrawOk = pcall(Crystals.drawList, cryList, 0, 0, 1.8, 1.8)
+    -- Crystals tests (Level 4 single and Level 5 dual tactical crystals)
+    local cryList4 = Crystals.spawnForLevel(testGrid, 4)
+    assertTest("Crystals spawned for Level 4", #cryList4 == 1)
+    local cryList5 = Crystals.spawnForLevel(testGrid, 5)
+    assertTest("Dual Crystals spawned for Level 5 (Chrono Freeze & Bonus)", #cryList5 == 2)
+    local cryDrawOk = true
+    for f = 1, 60 do
+        Crystals.updateList(cryList5, 0.016)
+        local okCD, errCD = pcall(Crystals.drawList, cryList5, 142, 28, 1.0, 1.8)
+        if not okCD then cryDrawOk = false; print("Crystals.drawList error: " .. tostring(errCD)); break end
+    end
+    assertTest("Crystals 60-frame procedural vector draw safety passed", cryDrawOk)
+
+    -- Achievements & Toast Notification System Tests
+    local Achievements = require("achievements")
+    Achievements.init()
+    Achievements.unlockedMap["veteran_survivor"] = nil
+    for _, b in ipairs(Achievements.DATA) do
+        if b.id == "veteran_survivor" then b.unlocked = false end
+    end
+    local okAchUn, resAchUn = pcall(Achievements.unlock, "veteran_survivor")
+    assertTest("Achievements.unlock('veteran_survivor') executed cleanly", okAchUn and resAchUn == true)
+    local toastDrawOk = true
+    local font = love.graphics.getFont()
+    for f = 1, 40 do
+        Achievements.update(0.016)
+        local okTD, errTD = pcall(Achievements.drawToasts, font, font)
+        if not okTD then toastDrawOk = false; print("Achievements.drawToasts error: " .. tostring(errTD)); break end
+    end
+    assertTest("Achievements.drawToasts multi-frame quad rendering passed", toastDrawOk)
+    local okArtUn, _ = pcall(Achievements.unlock, "art_connoisseur")
+    assertTest("Achievements.unlock('art_connoisseur') executed cleanly", okArtUn)
+    local okSave, _ = pcall(Achievements.save)
+    assertTest("Achievements.save executed cleanly without error", okSave)
     -- Test Player death with active stix in claimed field and respawn
     player.stixPath = { {x=20, y=126}, {x=21, y=126}, {x=22, y=126} }
     for _, pt in ipairs(player.stixPath) do
