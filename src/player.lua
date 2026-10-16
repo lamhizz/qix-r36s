@@ -681,15 +681,15 @@ function Player:draw(offsetX, offsetY, scaleX, scaleY)
         local clampedR = math.min(18 * pulse, math.max(3, math.min(py - 28, 476 - py)))
         local innerR = math.min(11 * pulse, math.max(2, clampedR * 0.65))
 
-        -- Soft outer protective aura fill
+        -- Soft outer protective aura fill (14 segments for low GPU overhead)
         love.graphics.setColor(0.0, 0.95, 1.0, alpha * 0.22)
-        love.graphics.circle("fill", px, py, clampedR)
+        love.graphics.circle("fill", px, py, clampedR, 14)
 
         -- Bright inner energy disc with dark core cutout for crisp halo
         love.graphics.setColor(1.0, 0.88, 0.2, alpha * 0.50)
-        love.graphics.circle("fill", px, py, innerR)
+        love.graphics.circle("fill", px, py, innerR, 12)
         love.graphics.setColor(0.02, 0.04, 0.08, 0.75)
-        love.graphics.circle("fill", px, py, innerR * 0.50)
+        love.graphics.circle("fill", px, py, innerR * 0.50, 10)
         love.graphics.setLineWidth(1)
     end
 

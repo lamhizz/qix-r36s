@@ -249,3 +249,9 @@ Embedded retro handheld development creates a notorious bottleneck: code runs sm
 * **The Solution**:
   * Implement `Grid:findNearestActiveBorder(targetX, targetY)`: Dynamically searches outward via concentric rings until finding a cell where `grid:isActiveBorder(x, y)` is `true`. Always initialize respawned Sparx and Player Marker using `findNearestActiveBorder`.
 
+### C. Absolute Ban on Per-Frame Disk I/O & Filesystem Syscalls
+* **The Problem**: Opening and closing files (`io.open("/tmp/...", "w")`) inside `love.update()` or `love.draw()` (even to tmpfs RAM disks) forces the Linux kernel VFS to allocate file descriptors and run `sys_openat`, `sys_write`, and `sys_close` hundreds of times per second. On the Cortex-A35 single-core Lua thread, 1,000+ filesystem syscalls/sec completely starves the CPU, dropping frame rate from 60 FPS down to 15–20 FPS and introducing unplayable input lag and micro-stutters.
+* **The Solution**:
+  * **Strict Zero-I/O in Frame Loops**: Never call `io.open`, `f:write`, or file flushing inside `update()` or `draw()`.
+  * Keep all per-frame telemetry in fast Lua memory (strings / ring buffers). Only sync to disk upon discrete event triggers (e.g., state changes, player death, level clear) or upon unhandled error traps.
+

@@ -66,14 +66,7 @@ end
 function Logger.setLastAction(tag, action, ...)
     local desc = (select("#", ...) > 0) and string.format(action, ...) or tostring(action)
     local uptime = love.timer and (love.timer.getTime() - Logger.startTime) or 0
-    local bc = string.format("[%07.2fs] [%s] %s", uptime, tag, desc)
-    pcall(function()
-        local fLast = io.open(Logger.lastActionFile, "w")
-        if fLast then
-            fLast:write(bc .. "\n")
-            fLast:close()
-        end
-    end)
+    Logger.lastAction = string.format("[%07.2fs] [%s] %s", uptime, tag, desc)
 end
 
 function Logger.dumpBreadcrumbs()

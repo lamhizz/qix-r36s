@@ -805,7 +805,6 @@ function game:onPlayerDeath(reason, hitGridX, hitGridY)
 end
 
 function love.update(dt)
-    Logger.setLastAction("UPDATE", "love.update (%s)", tostring(game.state))
     -- Poll gamepad / keyboard input
     game:updateInput()
     -- Update animated border line level cut progress bar
@@ -1135,7 +1134,6 @@ end
 -- RENDERING
 -- ==============================================================================
 function love.draw()
-    Logger.setLastAction("DRAW", "love.draw (%s)", tostring(game.state))
     love.graphics.setLineWidth(1)
     love.graphics.clear(0, 0, 0, 1)
 
